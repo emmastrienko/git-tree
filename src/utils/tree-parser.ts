@@ -42,6 +42,8 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
 
     if (bestParent.type === 'branch') {
       node.relativeAhead = Math.max(2, b.ahead - bestParent.ahead);
+    } else {
+      node.relativeAhead = Math.max(2, b.ahead);
     }
     bestParent.children.push(node);
   });

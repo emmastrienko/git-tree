@@ -4,73 +4,58 @@ import { fileURLToPath } from 'url';
 import axios from 'axios';
 import https from 'https';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const REPO = 'facebook/react';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, '..');
 
-// Load Env
-const envFile = fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8').catch(() => '');
-const token = envFile.match(/^GITHUB_TOKEN=(.*)$/m)?.[1]?.trim();
+const env = Object.fromEntries(
+  fs.readFileSync(path.join(ROOT, '.env.local'), 'utf8')
+    .split('\n')
+    .filter(line => line.includes('='))
+    .map(line => line.split('=').map(s => s.trim()))
+);
 
+const REPO = env.TEST_REPO || 'facebook/react';
 const api = axios.create({
-  baseURL: `https://api.github.com/repos/${REPO}`,
-  timeout: 15000,
-  headers: {
-    'Accept': 'application/vnd.github.v3+json',
-    ...(token && { 'Authorization': `token ${token}` })
+  baseURL: 'https://api.github.com',
+  headers: { 
+    Accept: 'application/vnd.github.v3+json',
+    ...(env.GITHUB_TOKEN && { Authorization: `token ${env.GITHUB_TOKEN}` })
   },
   httpsAgent: new https.Agent({ family: 4 })
 });
 
-const main = async () => {
-  console.log(`\x1b[36m⚡ Analyzing ${REPO}...\x1b[0m`);
-
+(async () => {
   try {
-    const { default_branch: base } = (await api.get('/')).data;
-    const branches = (await api.get('/branches?per_page=20')).data;
+    console.log(`> Fetching ${REPO}...`);
+    const { data: repo } = await api.get(`/repos/${REPO}`);
+    const { data: branchList } = await api.get(`/repos/${REPO}/branches?per_page=50`);
 
-    console.log(`   Base: \x1b[33m${base}\x1b[0m | Branches: \x1b[33m${branches.length}\x1b[0m`);
-
-    const comparisons = await Promise.all(branches.map(async (b) => {
-      if (b.name === base) return { name: b.name, isBase: true, ahead: 0, behind: 0 };
-      
-      const { data } = await api.get(`/compare/${base}...${b.name}`);
-      return {
-        name: b.name,
-        ahead: data.ahead_by,
-        behind: data.behind_by,
-        isBase: false
-      };
-    }));
-
-    // Nesting Heuristic
-    const groups = {};
-    comparisons.forEach(b => {
-      if (b.isBase) return;
-      if (!groups[b.behind]) groups[b.behind] = [];
-      groups[b.behind].push({ ...b, children: [] });
-    });
-
-    const tree = Object.keys(groups).map(key => {
-      const sorted = groups[key].sort((a, b) => a.ahead - b.ahead);
-      const root = sorted[0];
-      let curr = root;
-      
-      for (let i = 1; i < sorted.length; i++) {
-        curr.children.push(sorted[i]);
-        sorted[i].relativeAhead = sorted[i].ahead - curr.ahead;
-        curr = sorted[i];
+    const branches = (await Promise.all(branchList.map(async (b) => {
+      if (b.name === repo.default_branch) {
+        return { name: b.name, sha: b.commit.sha, ahead: 0, behind: 0, isBase: true };
       }
-      return root;
-    });
+      try {
+        const { data: c } = await api.get(`/repos/${REPO}/compare/${repo.default_branch}...${encodeURIComponent(b.name)}`);
+        return {
+          name: b.name,
+          sha: b.commit.sha,
+          mergeBaseSha: c.merge_base_commit?.sha,
+          history: c.commits?.map(commit => commit.sha) || [],
+          ahead: c.ahead_by,
+          behind: c.behind_by,
+          isMerged: ['identical', 'behind'].includes(c.status),
+          isBase: false
+        };
+      } catch (e) { return null; }
+    }))).filter(Boolean);
 
-    const outPath = path.join(ROOT, 'test-data.json');
-    fs.writeFileSync(outPath, JSON.stringify({ repo: REPO, base, tree }, null, 2));
-    console.log(`\x1b[32m✔ Snapshot saved to ${path.relative(process.cwd(), outPath)}\x1b[0m\n`);
+    const name = REPO.replace(/\//g, '-');
+    const out = path.join(ROOT, 'src/test/fixtures', `${name}.json`);
+    fs.writeFileSync(out, JSON.stringify({ repository: REPO, base_branch: repo.default_branch, branches }, null, 2));
 
-  } catch (err) {
-    console.error(`\x1b[31m✖ Failed:\x1b[0m ${err.message}`);
-    if (err.response) console.error(err.response.data);
+    console.log(`Done. Saved to ${name}.json (${branches.length} branches)`);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
   }
-};
-
-main();
+})();
