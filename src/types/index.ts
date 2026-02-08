@@ -13,8 +13,6 @@ export interface GitBranch {
   isBase?: boolean;
   ahead: number;
   behind: number;
-  
-  // Status flags
   status?: 'ahead' | 'behind' | 'diverged' | 'identical';
   hasConflicts?: boolean;
   isMerged?: boolean;
@@ -28,9 +26,8 @@ export interface VisualizerNode {
   ahead: number;
   behind: number;
   relativeAhead?: number;
-  
-  // Inherited from GitBranch
   hasConflicts?: boolean;
   isMerged?: boolean;
   metadata?: any;
+  discoveryIndex?: number;
 }

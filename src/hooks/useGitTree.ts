@@ -3,8 +3,7 @@ import { githubService } from '@/services/github';
 import { parseBranchTree } from '@/utils/tree-parser';
 import { GitBranch, ViewMode, VisualizerNode } from '@/types';
 
-// Simple in-memory cache to prevent redundant heavy comparisons
-const cache = new Map<string, GitBranch[]>();
+const cache = new Map<string, { items: any[], tree: VisualizerNode | null }>();
 
 export const useGitTree = () => {
   const [loading, setLoading] = useState(false);
@@ -24,14 +23,15 @@ export const useGitTree = () => {
   useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
 
   const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode) => {
-    const [owner, repo] = repoUrl.split('/');
+    const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
+    const [owner, repo] = cleanPath.split('/');
     if (!owner || !repo) return;
 
-    const cacheKey = `${owner}/${repo}/${mode}`;
+    const cacheKey = `${cleanPath}/${mode}`;
     if (cache.has(cacheKey)) {
       const cached = cache.get(cacheKey)!;
-      setItems(cached);
-      setTree(parseBranchTree(cached, cached.find(b => b.isBase)?.name || 'main'));
+      setItems(cached.items);
+      setTree(cached.tree);
       setGrowth(1);
       return;
     }
@@ -52,7 +52,6 @@ export const useGitTree = () => {
         const branchList = await githubService.getBranches(owner, repo);
         const comparedBranches: GitBranch[] = [];
 
-        // Optimized Batching: 15 at a time for high-speed retrieval
         for (let i = 0; i < branchList.length; i += 15) {
           const chunk = branchList.slice(i, i + 15);
           const results = await Promise.all(chunk.map(async (b) => {
@@ -76,16 +75,23 @@ export const useGitTree = () => {
           const valid = results.filter((res): res is GitBranch => res !== null);
           comparedBranches.push(...valid);
           
-          // INCREMENTAL UPDATE: Update UI as batches arrive
-          const currentValid = [...comparedBranches];
-          setItems(currentValid);
-          setTree(parseBranchTree(currentValid, base));
-          if (i === 0) animate(); // Start growth animation on first batch
+          // Re-parse tree with NEW batch of branches
+          const currentTree = parseBranchTree([...comparedBranches], base);
+          
+          setItems([...comparedBranches]);
+          setTree(currentTree);
+          
+          if (i === 0) animate();
         }
 
-        cache.set(cacheKey, comparedBranches);
+        // Final Cache Save
+        cache.set(cacheKey, { 
+          items: comparedBranches, 
+          tree: parseBranchTree(comparedBranches, base) 
+        });
       } else {
         setItems(openPRs);
+        cache.set(cacheKey, { items: openPRs, tree: null });
       }
     } catch (err) {
       console.error('GitTree Error:', err);

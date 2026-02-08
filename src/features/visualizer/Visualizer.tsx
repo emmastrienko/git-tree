@@ -1,15 +1,39 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { VisualizerNode } from '@/types';
 
 interface VisualizerProps {
   tree: VisualizerNode;
   growth?: number;
+  isFetching?: boolean;
 }
 
-export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1 }) => {
+export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetching }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [smoothLimit, setSmoothLimit] = useState(0);
+
+  useEffect(() => {
+    if (tree.children?.length === 0) {
+      setSmoothLimit(0);
+    }
+  }, [tree.name]);
+
+  useEffect(() => {
+    let frame: number;
+    const target = (tree.children?.length || 0);
+    
+    const update = () => {
+      setSmoothLimit(prev => {
+        if (prev < target) return prev + 0.2;
+        return prev;
+      });
+      frame = requestAnimationFrame(update);
+    };
+    
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, [tree.children?.length]);
 
   const getSide = (name: string) => {
     let hash = 0;
@@ -26,21 +50,21 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1 }) => {
     progress: number,
     depth: number,
     currentAngle: number,
-    metadata: any
+    metadata: any,
+    revealedLimit: number
   ) => {
-    if (progress <= 0) return;
+    if (node.discoveryIndex !== undefined && node.discoveryIndex > revealedLimit) return;
+
+    const nodeArrivalProgress = node.discoveryIndex !== undefined 
+      ? Math.max(0, Math.min(1, revealedLimit - node.discoveryIndex))
+      : 1;
 
     const isTrunk = node.type === 'trunk';
     const val = node.relativeAhead ?? node.ahead;
     
-    const maxBehind = metadata?.maxBehind || 1;
-    const branches = tree.children || [];
-    const minBehind = branches.length > 0 ? Math.min(...branches.map(c => c.behind)) : 0;
-    const highestSplitRatio = 1 - (minBehind / maxBehind) || 1;
-
     const length = isTrunk 
-      ? 650 * highestSplitRatio * progress 
-      : (Math.log10(val + 1) * 100 + 80) * progress * Math.pow(0.92, depth);
+      ? 250 * progress 
+      : (Math.log10(val + 1) * 100 + 80) * progress * nodeArrivalProgress * Math.pow(0.92, depth);
 
     ctx.save();
 
@@ -52,8 +76,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1 }) => {
     }
 
     const trunkWidth = 18;
-    const branchWidth = Math.max(3, 10 - depth * 2.5);
-    
     ctx.beginPath();
     ctx.moveTo(0, 0);
     if (isTrunk) {
@@ -63,78 +85,71 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1 }) => {
       const cp1y = -length / 2;
       ctx.quadraticCurveTo(cp1x, cp1y, 0, -length);
     }
-    
     ctx.strokeStyle = isTrunk ? '#1e293b' : color;
-    ctx.lineWidth = isTrunk ? trunkWidth : branchWidth;
+    ctx.lineWidth = isTrunk ? trunkWidth : Math.max(3, 10 - depth * 2.5);
     ctx.lineCap = 'round';
     ctx.stroke();
 
+    if (isTrunk && isFetching) {
+      const breathe = (Math.sin(time * 0.003) + 1) / 2;
+      ctx.strokeStyle = `rgba(99, 102, 241, ${0.1 + breathe * 0.3})`;
+      ctx.lineWidth = trunkWidth + 10;
+      ctx.stroke();
+    }
+
     if (isTrunk) {
+      const branches = tree.children || [];
       branches.forEach((child, i) => {
         ctx.save();
         const side = getSide(child.name);
+        const ratio = 1 - (child.behind / (metadata?.maxBehind || 1));
+        ctx.translate(0, -length * (0.2 + ratio * 0.75));
+        ctx.translate(side * ((trunkWidth / 2) - 1), 0);
+
         const spread = 1.8;
-        let angle = branches.length === 1 
-          ? 0.5 * side 
-          : (Math.abs(((i / (branches.length - 1)) - 0.5) * spread)) * side;
-
-        const ratio = (1 - (child.behind / maxBehind)) / highestSplitRatio;
-        ctx.translate(0, -length * ratio);
-        
-        const edgeOffset = (trunkWidth / 2) - 1; 
-        ctx.translate(side * edgeOffset, 0);
-
-        ctx.beginPath();
-        ctx.arc(0, 0, 4, 0, Math.PI * 2);
-        ctx.fillStyle = child.hasConflicts ? '#f43f5e' : '#818cf8';
-        ctx.fill();
-
+        let angle = branches.length === 1 ? 0.5 * side : (Math.abs(((i / (branches.length - 1)) - 0.5) * spread)) * side;
         const nextGlobalAngle = currentAngle + angle;
         const clampedAngle = Math.max(-1.4, Math.min(1.4, nextGlobalAngle));
-        ctx.rotate(clampedAngle);
         
-        drawNode(ctx, child, time, progress, depth + 1, clampedAngle, metadata);
+        ctx.rotate(clampedAngle);
+        drawNode(ctx, child, time, progress, depth + 1, clampedAngle, metadata, revealedLimit);
         ctx.restore();
       });
     } else {
       ctx.translate(0, -length);
       
-      ctx.beginPath();
-      ctx.arc(0, 0, 6, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      if (!node.isMerged) {
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = color;
-      }
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      if (nodeArrivalProgress > 0.8) {
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        if (!node.isMerged) {
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = color;
+        }
+        ctx.fill();
+        ctx.shadowBlur = 0;
 
-      ctx.save();
-      ctx.rotate(-currentAngle);
-      const label = node.name.length > 25 ? node.name.substring(0, 22) + '...' : node.name;
-      ctx.font = 'bold 10px monospace';
-      ctx.fillStyle = node.isMerged ? '#475569' : '#f1f5f9';
-      ctx.fillText(label, 14, 4);
-      ctx.restore();
+        ctx.save();
+        ctx.rotate(-currentAngle);
+        ctx.fillStyle = node.isMerged ? '#475569' : '#f1f5f9';
+        ctx.font = 'bold 10px monospace';
+        ctx.globalAlpha = (nodeArrivalProgress - 0.8) * 5;
+        ctx.fillText(node.name, 14, 4);
+        ctx.restore();
+      }
 
       node.children?.forEach((child, i) => {
         ctx.save();
         const spread = 0.7 * Math.pow(0.8, depth);
         const angle = ((i / (node.children.length - 1)) - 0.5) * spread || 0.3;
-        
-        ctx.beginPath();
-        ctx.arc(0, 0, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#818cf8';
-        ctx.fill();
-
         ctx.rotate(angle);
-        drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, metadata);
+        drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, metadata, revealedLimit);
         ctx.restore();
       });
     }
 
     ctx.restore();
-  }, [tree.children]); 
+  }, [isFetching, tree.children]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -148,13 +163,14 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1 }) => {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.save();
       ctx.translate(canvas.width / 2, canvas.height - 100);
-      drawNode(ctx, tree, time, growth, 0, 0, tree.metadata);
+      ctx.scale(0.9, 0.9);
+      drawNode(ctx, tree, time, growth, 0, 0, tree.metadata, smoothLimit);
       ctx.restore();
       frameId = requestAnimationFrame(render);
     };
     frameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frameId);
-  }, [tree, growth, drawNode]);
+  }, [tree, growth, drawNode, smoothLimit]);
 
   return (
     <div className="w-full h-full flex items-center justify-center bg-[#020617] overflow-hidden">

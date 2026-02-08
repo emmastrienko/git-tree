@@ -10,14 +10,19 @@ export const githubService = {
   getRepo: (owner: string, repo: string) => 
     fetcher<any>(`/api/github/repos/${owner}/${repo}`),
 
-  // Fetches all branches using a simple pagination loop
   getBranches: async (owner: string, repo: string) => {
     let all: any[] = [];
     let page = 1;
-    while (true) {
-      const pageData = await fetcher<any[]>(`/api/github/repos/${owner}/${repo}/branches?per_page=100&page=${page}`);
+    const MAX_PAGES = 10; // 1000 branches limit for UI stability
+    
+    while (page <= MAX_PAGES) {
+      const url = `/api/github/repos/${owner}/${repo}/branches?per_page=100&page=${page}`;
+      const pageData = await fetcher<any[]>(url);
+      
+      if (!pageData || pageData.length === 0) break;
+      
       all = [...all, ...pageData];
-      if (pageData.length < 100 || all.length >= 300) break; // Cap at 300 for stability
+      if (pageData.length < 100) break;
       page++;
     }
     return all;
