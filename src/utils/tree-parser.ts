@@ -1,44 +1,49 @@
 import { GitBranch, VisualizerNode } from '@/types';
 
-/**
- * Builds a recursive tree by linking branches whose merge-base matches 
- * the tip of another branch.
- */
 export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): VisualizerNode => {
   const nodes = new Map<string, VisualizerNode>();
   
-  // Initialize nodes
-  branches.forEach(b => {
-    nodes.set(b.name, {
-      name: b.name,
-      type: b.name === defaultBranch ? 'trunk' : 'branch',
-      sha: b.sha,
-      ahead: b.ahead,
-      behind: b.behind,
-      children: []
-    });
-  });
+  branches.forEach(b => nodes.set(b.name, {
+    ...b,
+    type: b.name === defaultBranch ? 'trunk' : 'branch',
+    children: []
+  }));
 
-  const trunk = nodes.get(defaultBranch);
-  if (!trunk) throw new Error('Trunk node missing');
+  if (!nodes.has(defaultBranch)) {
+    nodes.set(defaultBranch, { name: defaultBranch, type: 'trunk', sha: '', ahead: 0, behind: 0, children: [] });
+  }
 
-  // Link relationships
+  const trunk = nodes.get(defaultBranch)!;
+  trunk.metadata = {
+    maxBehind: Math.max(...branches.map(b => b.behind), 1),
+    maxAhead: Math.max(...branches.map(b => b.ahead), 1)
+  };
+
   branches.forEach(b => {
     if (b.name === defaultBranch) return;
 
     const node = nodes.get(b.name)!;
-    let parent = trunk;
+    const bHistory = new Set(b.history || []);
+    let bestParent = trunk;
+    let maxScore = -1;
 
-    // Find direct parent by SHA anchor
-    for (const [name, p] of nodes) {
-      if (name !== b.name && b.mergeBaseSha === p.sha) {
-        parent = p;
-        node.relativeAhead = Math.max(0, b.ahead - p.ahead);
-        break;
+    for (const p of branches) {
+      if (p.name === b.name || p.isBase) continue;
+
+      const isAncestor = bHistory.has(p.sha) || 
+                        (b.mergeBaseSha === p.mergeBaseSha && b.ahead > p.ahead) ||
+                        (b.behind === p.behind && b.ahead > p.ahead);
+
+      if (isAncestor && p.ahead > maxScore) {
+        maxScore = p.ahead;
+        bestParent = nodes.get(p.name)!;
       }
     }
 
-    parent.children.push(node);
+    if (bestParent.type === 'branch') {
+      node.relativeAhead = Math.max(2, b.ahead - bestParent.ahead);
+    }
+    bestParent.children.push(node);
   });
 
   return trunk;

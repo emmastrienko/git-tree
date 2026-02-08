@@ -7,11 +7,17 @@ export interface GitHubUser {
 
 export interface GitBranch {
   name: string;
-  sha: string;            // The current tip of the branch
-  mergeBaseSha?: string;  // The commit where it diverged from the base
+  sha: string;
+  mergeBaseSha?: string;
+  history?: string[];
   isBase?: boolean;
   ahead: number;
   behind: number;
+  
+  // Status flags
+  status?: 'ahead' | 'behind' | 'diverged' | 'identical';
+  hasConflicts?: boolean;
+  isMerged?: boolean;
 }
 
 export interface VisualizerNode {
@@ -22,4 +28,9 @@ export interface VisualizerNode {
   ahead: number;
   behind: number;
   relativeAhead?: number;
+  
+  // Inherited from GitBranch
+  hasConflicts?: boolean;
+  isMerged?: boolean;
+  metadata?: any;
 }

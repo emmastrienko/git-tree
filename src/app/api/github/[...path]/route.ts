@@ -16,7 +16,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       'User-Agent': 'Git-Tree-Visualizer',
       ...(process.env.GITHUB_TOKEN && { 'Authorization': `token ${process.env.GITHUB_TOKEN}` })
     },
-    timeout: 10000
+    timeout: 15000,
+    // CRITICAL: Forces IPv4 to bypass Windows Node.js connection issues
+    family: 4 
   };
 
   return new Promise((resolve) => {
@@ -32,12 +34,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       });
     });
 
-    proxyReq.on('error', (err) => resolve(NextResponse.json({ error: err.message }, { status: 500 })));
-    proxyReq.on('timeout', () => {
-      proxyReq.destroy();
-      resolve(NextResponse.json({ error: 'Upstream Timeout' }, { status: 504 }));
+    proxyReq.on('error', err => resolve(NextResponse.json({ error: err.message }, { status: 500 })));
+    proxyReq.on('timeout', () => { 
+      proxyReq.destroy(); 
+      resolve(NextResponse.json({ error: 'Timeout' }, { status: 504 })); 
     });
-
     proxyReq.end();
   });
 }

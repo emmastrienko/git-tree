@@ -1,0 +1,76 @@
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { githubService } from '@/services/github';
+import { parseBranchTree } from '@/utils/tree-parser';
+import { GitBranch, ViewMode, VisualizerNode } from '@/types';
+
+export const useGitTree = () => {
+  const [loading, setLoading] = useState(false);
+  const [tree, setTree] = useState<VisualizerNode | null>(null);
+  const [items, setItems] = useState<any[]>([]);
+  const [growth, setGrowth] = useState(0);
+  const frameRef = useRef<number>(0);
+
+  const animate = useCallback(() => {
+    setGrowth(prev => {
+      if (prev >= 1) return 1;
+      frameRef.current = requestAnimationFrame(animate);
+      return prev + 0.02;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => cancelAnimationFrame(frameRef.current);
+  }, []);
+
+  const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode) => {
+    const [owner, repo] = repoUrl.split('/');
+    if (!owner || !repo) return;
+
+    setLoading(true);
+    setTree(null);
+    setGrowth(0);
+    cancelAnimationFrame(frameRef.current);
+
+    try {
+      const [repoData, openPRs] = await Promise.all([
+        githubService.getRepo(owner, repo),
+        githubService.getPullRequests(owner, repo)
+      ]);
+      const base = repoData.default_branch;
+
+      if (mode === 'branches') {
+        const branchList = await githubService.getBranches(owner, repo);
+        const branches = await Promise.all(branchList.slice(0, 20).map(async (b) => {
+          if (b.name === base) return { name: b.name, sha: b.commit.sha, ahead: 0, behind: 0, isBase: true };
+          try {
+            const comp = await githubService.compare(owner, repo, base, b.name);
+            const pr = openPRs.find(p => p.head.ref === b.name);
+            return {
+              name: b.name,
+              sha: b.commit.sha,
+              mergeBaseSha: comp.merge_base_commit?.sha,
+              history: comp.commits?.map((c: any) => c.sha) || [],
+              ahead: comp.ahead_by,
+              behind: comp.behind_by,
+              isMerged: comp.status === 'identical' || comp.status === 'behind',
+              hasConflicts: pr?.mergeable_state === 'dirty'
+            };
+          } catch { return null; }
+        }));
+
+        const valid = branches.filter((b): b is GitBranch => b !== null);
+        setItems(valid);
+        setTree(parseBranchTree(valid, base));
+        animate();
+      } else {
+        setItems(openPRs);
+      }
+    } catch (err) {
+      console.error('GitTree Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [animate]);
+
+  return { loading, tree, items, growth, fetchTree };
+};
