@@ -1,39 +1,44 @@
 # Git Tree Visualizer
 
-An interactive visualization engine that transforms GitHub repository data into hierarchical structures using HTML5 Canvas.
+A Next.js application for visualizing GitHub repository topologies through 2D Canvas and 3D Three.js rendering.
 
 ## The Problem
-Parsing complex Git logs and multi-file Pull Requests in a text-based format is inefficient. Git Tree provides a visual mental model of a codebase's state.
+Parsing complex Git logs and multi-branch relationships in a text-based format is often inefficient. Git Tree Visualizer provides a visual mental model of a repository's state, allowing developers to understand branch divergence and merging patterns at a glance.
 
 ## Core Logic
-The application fetches data via the **GitHub REST API** and processes it through a recursive building algorithm:
-1. **Fetch**: Retrieves flat file trees or branch commit histories.
-2. **Transform**: Converts flat paths into a nested JSON tree structure.
-3. **Render**: Maps the nested data onto a Canvas coordinate system with dynamic node scaling.
+The engine processes GitHub repository data through a multi-stage pipeline:
+1. **Fetch**: Retrieves branch metadata and comparison data via the GitHub REST API (proxied through Next.js API routes).
+2. **Transform**: A heuristic-based parser in `src/utils/tree-parser.ts` converts flat branch comparisons into a nested JSON tree structure.
+3. **Render**: Maps the hierarchical data onto either a 2D Canvas coordinate system or a 3D Three.js scene graph.
 
-## Planned Features
-- **PR Heat-maps**: Nodes (files) scale based on "Code Churn" (total additions and deletions).
-- **Branch Topology**: Visualizing merge relationships and branch divergence.
-- **Review State**: Tracking which parts of the tree have been inspected in real-time.
+## Features
+* **Dual-Engine Rendering**: Switch between an optimized 2D Canvas engine and a 3D Three.js environment.
+* **Camera Controls**: Native support for panning and zooming in both visualization modes.
+* **Adaptive Distribution**: Uses wide-fan layouts in 2D and Golden Angle distribution in 3D to ensure branch separation.
+* **Incremental Synchronization**: Batched API requests (15 branches per chunk) for responsive UI updates during data fetching.
 
 ## Tech Stack
-- **Framework**: Next.js 15 (App Router)
-- **Language**: TypeScript
-- **Graphics**: HTML5 Canvas API
-- **Styling**: Tailwind CSS 4
+* **Framework**: Next.js 16 (App Router), TypeScript, Tailwind CSS
+* **Graphics**: Three.js, HTML5 Canvas API
+* **Testing**: Vitest for tree-parsing and stress testing
 
-## Getting Started
+## Development
 
-1. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+### Setup
+```bash
+npm install
+npm run dev
+```
 
-2. **Run the development server**:
-   ```bash
-   npm run dev
-   ```
+### Commands
+* `npm run dev`: Start development server
+* `npm run test`: Run Vitest suite
+* `npm run build`: Production build
 
-3. **Open the application**:
-   Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
+## Planned Features
+* **Code Churn Heat-maps**: Scaling nodes based on total additions and deletions in Pull Requests.
+* **PR Target Visualization**: Explicitly mapping open PRs relative to their target branches.
+* **Review State Tracking**: Visual indicators for inspected vs. uninspected parts of the tree.
 
+---
+&copy; 2026 Emma Strienko
