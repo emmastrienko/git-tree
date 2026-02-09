@@ -12,12 +12,44 @@ interface VisualizerProps {
 export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetching }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [smoothLimit, setSmoothLimit] = useState(0);
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.8 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     if (tree.children?.length === 0) {
       setSmoothLimit(0);
+      setTransform({ x: 0, y: 0, scale: 0.8 });
     }
   }, [tree.name]);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    const zoomSpeed = 0.001;
+    const delta = -e.deltaY * zoomSpeed;
+    setTransform(prev => ({
+      ...prev,
+      scale: Math.max(0.1, Math.min(5, prev.scale + delta))
+    }));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setLastMousePos({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastMousePos.x;
+    const dy = e.clientY - lastMousePos.y;
+    setTransform(prev => ({
+      ...prev,
+      x: prev.x + dx,
+      y: prev.y + dy
+    }));
+    setLastMousePos({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
 
   useEffect(() => {
     let frame: number;
@@ -162,19 +194,34 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.save();
-      ctx.translate(canvas.width / 2, canvas.height - 100);
-      ctx.scale(0.9, 0.9);
+      
+      // Apply Camera Transform
+      ctx.translate(canvas.width / 2 + transform.x, canvas.height - 100 + transform.y);
+      ctx.scale(transform.scale, transform.scale);
+      
       drawNode(ctx, tree, time, growth, 0, 0, tree.metadata, smoothLimit);
       ctx.restore();
       frameId = requestAnimationFrame(render);
     };
     frameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frameId);
-  }, [tree, growth, drawNode, smoothLimit]);
+  }, [tree, growth, drawNode, smoothLimit, transform]);
 
   return (
-    <div className="w-full h-full flex items-center justify-center bg-[#020617] overflow-hidden">
-      <canvas ref={canvasRef} width={1400} height={1000} className="max-w-full max-h-full object-contain pointer-events-none" />
+    <div 
+      className="w-full h-full flex items-center justify-center bg-[#020617] overflow-hidden cursor-grab active:cursor-grabbing"
+      onWheel={handleWheel}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      <canvas 
+        ref={canvasRef} 
+        width={1400} 
+        height={1000} 
+        className="max-w-full max-h-full object-contain pointer-events-none" 
+      />
     </div>
   );
 };
