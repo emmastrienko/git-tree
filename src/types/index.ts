@@ -16,6 +16,10 @@ export interface GitBranch {
   status?: 'ahead' | 'behind' | 'diverged' | 'identical';
   hasConflicts?: boolean;
   isMerged?: boolean;
+  additions?: number;
+  deletions?: number;
+  filesChanged?: number;
+  lastUpdated?: string;
 }
 
 export interface VisualizerNode {
@@ -30,4 +34,8 @@ export interface VisualizerNode {
   isMerged?: boolean;
   metadata?: any;
   discoveryIndex?: number;
+  additions?: number;
+  deletions?: number;
+  filesChanged?: number;
+  lastUpdated?: string;
 }

@@ -2,7 +2,7 @@
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { VisualizerNode } from '@/types';
-import { GitCommit, AlertCircle, CheckCircle2, X, Activity, ExternalLink, ChevronRight, Copy, Check } from 'lucide-react';
+import { GitCommit, AlertCircle, X, Activity, ExternalLink, ChevronRight, Copy, Check, Clock, FileText, Plus, Minus } from 'lucide-react';
 
 interface NodeTooltipProps {
   node: VisualizerNode;
@@ -11,6 +11,22 @@ interface NodeTooltipProps {
   onClose: () => void;
 }
 
+const formatRelativeTime = (dateStr?: string) => {
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffInMs = now.getTime() - date.getTime();
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  
+  if (diffInDays === 0) {
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    if (diffInHours === 0) return 'Just now';
+    return `${diffInHours}h ago`;
+  }
+  if (diffInDays < 30) return `${diffInDays}d ago`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
 export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUrl, onClose }) => {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState({ x: position.x + 24, y: position.y - 80 });
@@ -18,6 +34,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
   const [copied, setCopied] = useState(false);
   
   const githubLink = `https://github.com/${repoUrl}/tree/${node.name}`;
+  const relativeTime = formatRelativeTime(node.lastUpdated);
 
   const copySha = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -70,7 +87,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
       style={{ 
         left: adjustedPos.x, 
         top: adjustedPos.y,
-        minWidth: '300px'
+        minWidth: '320px'
       }}
     >
       <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden shadow-black/50">
@@ -84,6 +101,11 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
               {node.isMerged && (
                 <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 uppercase tracking-tight">
                   Merged
+                </span>
+              )}
+              {relativeTime && (
+                <span className="flex items-center gap-1 text-[10px] text-slate-500 font-medium ml-1">
+                  <Clock size={10} /> {relativeTime}
                 </span>
               )}
             </div>
@@ -101,21 +123,46 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
 
         {/* Content */}
         <div className="p-4 space-y-4">
-          {/* Stats Bar */}
-          <div className="flex gap-1.5 h-8">
-            <div className="flex-1 flex items-center justify-between px-3 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
+          {/* Main Stats Row */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center justify-between px-3 py-2 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
               <span className="text-[10px] text-emerald-500/60 font-medium">Ahead</span>
               <span className="text-xs font-mono font-bold text-emerald-400">{node.ahead}</span>
             </div>
-            <div className="flex-1 flex items-center justify-between px-3 bg-rose-500/5 border border-rose-500/10 rounded-lg">
+            <div className="flex items-center justify-between px-3 py-2 bg-rose-500/5 border border-rose-500/10 rounded-lg">
               <span className="text-[10px] text-rose-500/60 font-medium">Behind</span>
               <span className="text-xs font-mono font-bold text-rose-400">{node.behind}</span>
             </div>
           </div>
 
+          {/* Change Magnitude Bar */}
+          {(node.additions !== undefined || node.deletions !== undefined) && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-medium px-1">
+                <span className="text-slate-500 flex items-center gap-1.5">
+                  <FileText size={12} /> {node.filesChanged} files changed
+                </span>
+                <div className="flex gap-2">
+                  <span className="text-emerald-500 flex items-center gap-0.5"><Plus size={10} />{node.additions}</span>
+                  <span className="text-rose-500 flex items-center gap-0.5"><Minus size={10} />{node.deletions}</span>
+                </div>
+              </div>
+              <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden flex">
+                <div 
+                  className="h-full bg-emerald-500/60" 
+                  style={{ width: `${(node.additions! / (node.additions! + node.deletions! || 1)) * 100}%` }} 
+                />
+                <div 
+                  className="h-full bg-rose-500/60" 
+                  style={{ width: `${(node.deletions! / (node.additions! + node.deletions! || 1)) * 100}%` }} 
+                />
+              </div>
+            </div>
+          )}
+
           {/* SHA Section */}
           {node.sha && (
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 pt-1">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider flex items-center gap-1.5">
                   <GitCommit size={12} /> Latest SHA

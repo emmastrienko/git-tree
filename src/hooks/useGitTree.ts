@@ -59,6 +59,15 @@ export const useGitTree = () => {
             try {
               const comp = await githubService.compare(owner, repo, base, b.name);
               const pr = openPRs.find(p => p.head.ref === b.name);
+              
+              // Extract change magnitude and files
+              const additions = comp.files?.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
+              const deletions = comp.files?.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
+              const filesChanged = comp.files?.length || 0;
+              const lastUpdated = comp.commits?.length > 0 
+                ? comp.commits[comp.commits.length - 1].commit.author.date 
+                : undefined;
+
               return {
                 name: b.name,
                 sha: b.commit.sha,
@@ -67,7 +76,11 @@ export const useGitTree = () => {
                 ahead: comp.ahead_by,
                 behind: comp.behind_by,
                 isMerged: comp.status === 'identical' || comp.status === 'behind',
-                hasConflicts: pr?.mergeable_state === 'dirty'
+                hasConflicts: pr?.mergeable_state === 'dirty',
+                additions,
+                deletions,
+                filesChanged,
+                lastUpdated
               };
             } catch { return null; }
           }));
