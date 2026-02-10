@@ -5,6 +5,19 @@ export interface GitHubUser {
   avatar_url?: string;
 }
 
+export interface GitPullRequest {
+  title: string;
+  number: number;
+  html_url: string;
+  state: string;
+  mergeable_state?: string;
+  head: {
+    ref: string;
+    sha: string;
+  };
+  user: GitHubUser;
+}
+
 export interface GitBranch {
   name: string;
   sha: string;

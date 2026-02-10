@@ -54,8 +54,16 @@ export const useGitTree = () => {
 
         for (let i = 0; i < branchList.length; i += 15) {
           const chunk = branchList.slice(i, i + 15);
-          const results = await Promise.all(chunk.map(async (b) => {
-            if (b.name === base) return { name: b.name, sha: b.commit.sha, ahead: 0, behind: 0, isBase: true };
+          const results = await Promise.all(chunk.map(async (b): Promise<GitBranch | null> => {
+            if (b.name === base) return { 
+              name: b.name, 
+              sha: b.commit.sha, 
+              ahead: 0, 
+              behind: 0, 
+              isBase: true,
+              children: []
+            } as GitBranch;
+            
             try {
               const comp = await githubService.compare(owner, repo, base, b.name);
               const pr = openPRs.find(p => p.head.ref === b.name);
@@ -81,7 +89,7 @@ export const useGitTree = () => {
                 deletions,
                 filesChanged,
                 lastUpdated
-              };
+              } as GitBranch;
             } catch { return null; }
           }));
 

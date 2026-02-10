@@ -8,9 +8,10 @@ import { VisualizerNode } from '@/types';
 interface ThreeVisualizerProps {
   tree: VisualizerNode;
   isFetching?: boolean;
+  onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
 }
 
-export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree }) => {
+export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
