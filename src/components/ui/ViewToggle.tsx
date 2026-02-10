@@ -10,8 +10,8 @@ interface ViewToggleProps {
 
 export const ViewToggle: React.FC<ViewToggleProps> = ({ is3D, onToggle }) => {
   return (
-    <div className="absolute top-6 left-6 z-30">
-      <div className="bg-slate-900/90 backdrop-blur-md border border-white/10 p-1 rounded-lg shadow-xl flex gap-1">
+    <div className="absolute top-4 left-4 md:left-6 z-30">
+      <div className="bg-slate-900/95 backdrop-blur-md border border-white/10 p-1 rounded-lg shadow-2xl flex gap-1">
         <button 
           onClick={() => onToggle(false)}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-all ${

@@ -20,7 +20,7 @@ export default function Home() {
   const [is3D, setIs3D] = useState(false);
   const [selectedNode, setSelectedNode] = useState<VisualizerNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const { loading, tree, items, growth, fetchTree } = useGitTree();
+  const { loading, error, tree, items, growth, fetchTree } = useGitTree();
 
   const handleFetch = () => {
     setSelectedNode(null);
@@ -34,7 +34,7 @@ export default function Home() {
 
   return (
     <MainLayout
-      header={
+      header={({ onMenuClick }) => (
         <Header 
           repoUrl={repoUrl} 
           setRepoUrl={setRepoUrl} 
@@ -42,8 +42,9 @@ export default function Home() {
           setViewMode={setViewMode}
           onFetch={handleFetch}
           loading={loading}
+          onMenuClick={onMenuClick}
         />
-      }
+      )}
       sidebar={<Sidebar viewMode={viewMode} items={items} />}
       footer={<Footer />}
     >
@@ -61,7 +62,7 @@ export default function Home() {
           />
         )}
 
-        {tree ? (
+        {tree && !error ? (
           is3D ? (
             <ThreeVisualizer 
               tree={tree} 
@@ -77,7 +78,7 @@ export default function Home() {
             />
           )
         ) : (
-          <EmptyState loading={loading} />
+          <EmptyState loading={loading} error={error} />
         )}
       </div>
     </MainLayout>

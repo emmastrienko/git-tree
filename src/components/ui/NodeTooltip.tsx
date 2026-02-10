@@ -31,10 +31,18 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState({ x: position.x + 24, y: position.y - 80 });
   const [tailPos, setTailPos] = useState({ x: -6, y: 80 });
+  const [isMobile, setIsMobile] = useState(false);
   const [copied, setCopied] = useState(false);
   
   const githubLink = `https://github.com/${repoUrl}/tree/${node.name}`;
   const relativeTime = formatRelativeTime(node.lastUpdated);
+
+  useLayoutEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const copySha = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -46,7 +54,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
   };
 
   useLayoutEffect(() => {
-    if (!tooltipRef.current) return;
+    if (!tooltipRef.current || isMobile) return;
 
     const tooltip = tooltipRef.current;
     const rect = tooltip.getBoundingClientRect();
@@ -78,7 +86,89 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
 
     setAdjustedPos({ x: newX, y: newY });
     setTailPos({ x: newTailX, y: newTailY });
-  }, [position]);
+  }, [position, isMobile]);
+
+  if (isMobile) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[55] animate-in fade-in duration-200" onClick={onClose} />
+        <div className="fixed bottom-4 left-4 right-4 z-[60] animate-in slide-in-from-bottom-8 duration-300">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-white/5 flex items-start justify-between bg-white/[0.02]">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/10 text-slate-300 uppercase tracking-tight">
+                    {node.type}
+                  </span>
+                  {node.isMerged && (
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 uppercase tracking-tight">
+                      Merged
+                    </span>
+                  )}
+                  {relativeTime && (
+                    <span className="flex items-center gap-1 text-[10px] text-slate-500 font-medium ml-1">
+                      <Clock size={10} /> {relativeTime}
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-sm font-semibold text-slate-100 truncate tracking-tight">
+                  {node.name}
+                </h2>
+              </div>
+              <button 
+                onClick={onClose}
+                className="p-1 hover:bg-white/10 rounded-md text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {/* Content - condensed for mobile */}
+            <div className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between px-3 py-2 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
+                  <span className="text-[10px] text-emerald-500/60 font-medium">Ahead</span>
+                  <span className="text-xs font-mono font-bold text-emerald-400">{node.ahead}</span>
+                </div>
+                <div className="flex items-center justify-between px-3 py-2 bg-rose-500/5 border border-rose-500/10 rounded-lg">
+                  <span className="text-[10px] text-rose-500/60 font-medium">Behind</span>
+                  <span className="text-xs font-mono font-bold text-rose-400">{node.behind}</span>
+                </div>
+              </div>
+
+              {(node.additions !== undefined || node.deletions !== undefined) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-medium px-1">
+                    <span className="text-slate-500 flex items-center gap-1.5">
+                      <FileText size={12} /> {node.filesChanged} files
+                    </span>
+                    <div className="flex gap-2">
+                      <span className="text-emerald-500">+{node.additions}</span>
+                      <span className="text-rose-500">-{node.deletions}</span>
+                    </div>
+                  </div>
+                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-emerald-500/60" style={{ width: `${(node.additions! / (node.additions! + node.deletions! || 1)) * 100}%` }} />
+                    <div className="h-full bg-rose-500/60" style={{ width: `${(node.deletions! / (node.additions! + node.deletions! || 1)) * 100}%` }} />
+                  </div>
+                </div>
+              )}
+
+              <a 
+                href={githubLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20 active:scale-[0.98]"
+              >
+                <ExternalLink size={14} />
+                View on GitHub
+              </a>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <div 

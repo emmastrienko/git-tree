@@ -7,6 +7,7 @@ const cache = new Map<string, { items: any[], tree: VisualizerNode | null }>();
 
 export const useGitTree = () => {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [tree, setTree] = useState<VisualizerNode | null>(null);
   const [items, setItems] = useState<any[]>([]);
   const [growth, setGrowth] = useState(0);
@@ -33,10 +34,12 @@ export const useGitTree = () => {
       setItems(cached.items);
       setTree(cached.tree);
       setGrowth(1);
+      setError(null);
       return;
     }
 
     setLoading(true);
+    setError(null);
     setTree(null);
     setGrowth(0);
     cancelAnimationFrame(frameRef.current);
@@ -90,7 +93,10 @@ export const useGitTree = () => {
                 filesChanged,
                 lastUpdated
               } as GitBranch;
-            } catch { return null; }
+            } catch (e: any) { 
+              if (e.message?.includes('403')) throw e; // Bubble up rate limit
+              return null; 
+            }
           }));
 
           const valid = results.filter((res): res is GitBranch => res !== null);
@@ -114,12 +120,17 @@ export const useGitTree = () => {
         setItems(openPRs);
         cache.set(cacheKey, { items: openPRs, tree: null });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('GitTree Error:', err);
+      if (err.message?.includes('403')) {
+        setError('RATE_LIMIT');
+      } else {
+        setError('FETCH_ERROR');
+      }
     } finally {
       setLoading(false);
     }
   }, [animate]);
 
-  return { loading, tree, items, growth, fetchTree };
+  return { loading, error, tree, items, growth, fetchTree };
 };
