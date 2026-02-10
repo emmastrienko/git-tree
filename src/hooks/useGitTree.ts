@@ -3,7 +3,18 @@ import { githubService } from '@/services/github';
 import { parseBranchTree } from '@/utils/tree-parser';
 import { GitBranch, ViewMode, VisualizerNode } from '@/types';
 
-const cache = new Map<string, { items: any[], tree: VisualizerNode | null }>();
+const CACHE_PREFIX = 'git_viz_';
+
+const getCache = (key: string) => {
+  if (typeof window === 'undefined') return null;
+  const data = sessionStorage.getItem(CACHE_PREFIX + key);
+  return data ? JSON.parse(data) : null;
+};
+
+const setCache = (key: string, value: any) => {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value));
+};
 
 export const useGitTree = () => {
   const [loading, setLoading] = useState(false);
@@ -12,6 +23,7 @@ export const useGitTree = () => {
   const [items, setItems] = useState<any[]>([]);
   const [growth, setGrowth] = useState(0);
   const frameRef = useRef<number>(0);
+  const fetchingNodes = useRef<Set<string>>(new Set());
 
   const animate = useCallback(() => {
     setGrowth(prev => {
@@ -23,14 +35,69 @@ export const useGitTree = () => {
 
   useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
 
+  const fetchNodeDetails = useCallback(async (repoUrl: string, node: VisualizerNode) => {
+    if (node.additions !== undefined || node.type === 'trunk' || fetchingNodes.current.has(node.name)) return;
+    
+    fetchingNodes.current.add(node.name);
+    const [owner, repo] = repoUrl.split('/');
+    const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
+    
+    try {
+      const baseBranch = tree?.name || 'main';
+      const comp = await githubService.compare(owner, repo, baseBranch, node.name);
+      
+      const details = {
+        additions: comp.files?.reduce((acc: number, f: any) => acc + f.additions, 0) || 0,
+        deletions: comp.files?.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0,
+        filesChanged: comp.files?.length || 0,
+        lastUpdated: comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1].commit.author.date : undefined
+      };
+
+      let newItems: any[] = [];
+      let newTree: VisualizerNode | null = null;
+
+      // Update local items list
+      setItems(prev => {
+        newItems = prev.map(item => item.name === node.name ? { ...item, ...details } : item);
+        return newItems;
+      });
+      
+      // Update tree deeply
+      setTree(prev => {
+        if (!prev) return null;
+        const updateNodeDeep = (curr: VisualizerNode): VisualizerNode => {
+          if (curr.name === node.name) return { ...curr, ...details };
+          if (curr.children && curr.children.length > 0) return { ...curr, children: curr.children.map(updateNodeDeep) };
+          return curr;
+        };
+        newTree = updateNodeDeep(prev);
+        return newTree;
+      });
+
+      // Update Session Cache with the new enriched data
+      // We wait a tick to ensure newItems/newTree are populated from the state updates above
+      setTimeout(() => {
+        if (newItems.length > 0 && newTree) {
+          const mode = sessionStorage.getItem('last_view_mode') || 'branches';
+          setCache(`${cleanPath}/${mode}`, { items: newItems, tree: newTree });
+        }
+      }, 0);
+
+    } catch (e) {
+      console.error('Failed to fetch node details', e);
+    } finally {
+      fetchingNodes.current.delete(node.name);
+    }
+  }, [tree?.name]);
+
   const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode) => {
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
     const [owner, repo] = cleanPath.split('/');
     if (!owner || !repo) return;
 
     const cacheKey = `${cleanPath}/${mode}`;
-    if (cache.has(cacheKey)) {
-      const cached = cache.get(cacheKey)!;
+    const cached = getCache(cacheKey);
+    if (cached) {
       setItems(cached.items);
       setTree(cached.tree);
       setGrowth(1);
@@ -55,30 +122,17 @@ export const useGitTree = () => {
         const branchList = await githubService.getBranches(owner, repo);
         const comparedBranches: GitBranch[] = [];
 
-        for (let i = 0; i < branchList.length; i += 15) {
-          const chunk = branchList.slice(i, i + 15);
+        // Chunk size increased to 50 for fewer, larger updates
+        for (let i = 0; i < branchList.length; i += 50) {
+          const chunk = branchList.slice(i, i + 50);
           const results = await Promise.all(chunk.map(async (b): Promise<GitBranch | null> => {
-            if (b.name === base) return { 
-              name: b.name, 
-              sha: b.commit.sha, 
-              ahead: 0, 
-              behind: 0, 
-              isBase: true,
-              children: []
-            } as GitBranch;
+            if (b.name === base) return { name: b.name, sha: b.commit.sha, ahead: 0, behind: 0, isBase: true } as GitBranch;
             
             try {
               const comp = await githubService.compare(owner, repo, base, b.name);
               const pr = openPRs.find(p => p.head.ref === b.name);
               
-              // Extract change magnitude and files
-              const additions = comp.files?.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
-              const deletions = comp.files?.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
-              const filesChanged = comp.files?.length || 0;
-              const lastUpdated = comp.commits?.length > 0 
-                ? comp.commits[comp.commits.length - 1].commit.author.date 
-                : undefined;
-
+              // ONLY fetch basic stats during initial load to save rate limits
               return {
                 name: b.name,
                 sha: b.commit.sha,
@@ -87,50 +141,37 @@ export const useGitTree = () => {
                 ahead: comp.ahead_by,
                 behind: comp.behind_by,
                 isMerged: comp.status === 'identical' || comp.status === 'behind',
-                hasConflicts: pr?.mergeable_state === 'dirty',
-                additions,
-                deletions,
-                filesChanged,
-                lastUpdated
+                hasConflicts: pr?.mergeable_state === 'dirty'
               } as GitBranch;
             } catch (e: any) { 
-              if (e.message?.includes('403')) throw e; // Bubble up rate limit
+              if (e.message?.includes('403')) throw e;
               return null; 
             }
           }));
 
           const valid = results.filter((res): res is GitBranch => res !== null);
           comparedBranches.push(...valid);
-          
-          // Re-parse tree with NEW batch of branches
           const currentTree = parseBranchTree([...comparedBranches], base);
           
           setItems([...comparedBranches]);
           setTree(currentTree);
           
+          // Save partial data to cache for resilience
+          setCache(cacheKey, { items: [...comparedBranches], tree: currentTree });
+
           if (i === 0) animate();
         }
-
-        // Final Cache Save
-        cache.set(cacheKey, { 
-          items: comparedBranches, 
-          tree: parseBranchTree(comparedBranches, base) 
-        });
       } else {
         setItems(openPRs);
-        cache.set(cacheKey, { items: openPRs, tree: null });
+        setCache(cacheKey, { items: openPRs, tree: null });
       }
     } catch (err: any) {
-      console.error('GitTree Error:', err);
-      if (err.message?.includes('403')) {
-        setError('RATE_LIMIT');
-      } else {
-        setError('FETCH_ERROR');
-      }
+      if (err.message?.includes('403')) setError('RATE_LIMIT');
+      else setError('FETCH_ERROR');
     } finally {
       setLoading(false);
     }
   }, [animate]);
 
-  return { loading, error, tree, items, growth, fetchTree };
+  return { loading, error, tree, items, growth, fetchTree, fetchNodeDetails };
 };

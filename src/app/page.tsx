@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -18,17 +18,46 @@ export default function Home() {
   const [repoUrl, setRepoUrl] = useState('facebook/react');
   const [viewMode, setViewMode] = useState<ViewMode>('branches');
   const [is3D, setIs3D] = useState(false);
-  const [selectedNode, setSelectedNode] = useState<VisualizerNode | null>(null);
+  const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const { loading, error, tree, items, growth, fetchTree } = useGitTree();
+  const { loading, error, tree, items, growth, fetchTree, fetchNodeDetails } = useGitTree();
+
+  // Find the selected node in the current tree
+  const selectedNode = tree ? (() => {
+    const findNode = (curr: VisualizerNode): VisualizerNode | null => {
+      if (curr.name === selectedNodeName) return curr;
+      if (curr.children) {
+        for (const child of curr.children) {
+          const found = findNode(child);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    return findNode(tree);
+  })() : null;
+
+  // Auto-load last session on mount
+  useEffect(() => {
+    const lastRepo = sessionStorage.getItem('last_repo_url');
+    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
+    
+    if (lastRepo) {
+      setRepoUrl(lastRepo);
+      if (lastMode) setViewMode(lastMode);
+      fetchTree(lastRepo, lastMode || 'branches');
+    }
+  }, [fetchTree]);
 
   const handleFetch = () => {
-    setSelectedNode(null);
+    setSelectedNodeName(null);
+    sessionStorage.setItem('last_repo_url', repoUrl);
+    sessionStorage.setItem('last_view_mode', viewMode);
     fetchTree(repoUrl, viewMode);
   };
 
   const handleSelect = (node: VisualizerNode, pos: { x: number; y: number }) => {
-    setSelectedNode(node);
+    setSelectedNodeName(node.name);
     setTooltipPos(pos);
   };
 
@@ -58,7 +87,8 @@ export default function Home() {
             node={selectedNode} 
             position={tooltipPos} 
             repoUrl={repoUrl}
-            onClose={() => setSelectedNode(null)} 
+            onClose={() => setSelectedNodeName(null)} 
+            fetchDetails={() => fetchNodeDetails(repoUrl, selectedNode)}
           />
         )}
 

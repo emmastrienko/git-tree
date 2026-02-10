@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState, useEffect } from 'react';
 import { VisualizerNode } from '@/types';
-import { GitCommit, AlertCircle, X, Activity, ExternalLink, ChevronRight, Copy, Check, Clock, FileText, Plus, Minus } from 'lucide-react';
+import { GitCommit, AlertCircle, X, Activity, ExternalLink, ChevronRight, Copy, Check, Clock, FileText, Plus, Minus, Loader2 } from 'lucide-react';
 
 interface NodeTooltipProps {
   node: VisualizerNode;
   position: { x: number; y: number };
   repoUrl: string;
   onClose: () => void;
+  fetchDetails?: () => void;
 }
 
 const formatRelativeTime = (dateStr?: string) => {
@@ -27,7 +28,7 @@ const formatRelativeTime = (dateStr?: string) => {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUrl, onClose }) => {
+export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUrl, onClose, fetchDetails }) => {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState({ x: position.x + 24, y: position.y - 80 });
   const [tailPos, setTailPos] = useState({ x: -6, y: 80 });
@@ -43,6 +44,16 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  useEffect(() => {
+    // Only fetch if we don't have data AND it's not a trunk node
+    if (fetchDetails && node.additions === undefined && node.type !== 'trunk') {
+      fetchDetails();
+    }
+    // We intentionally only want this to run when the node name changes
+    // to avoid re-triggering during the actual fetch/state update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.name]);
 
   const copySha = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -88,13 +99,107 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
     setTailPos({ x: newTailX, y: newTailY });
   }, [position, isMobile]);
 
+  const statsContent = (
+    <div className="p-4 space-y-4">
+      {/* Main Stats Row */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex items-center justify-between px-3 py-2 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
+          <span className="text-[10px] text-emerald-500/60 font-medium">Ahead</span>
+          <span className="text-xs font-mono font-bold text-emerald-400">{node.ahead}</span>
+        </div>
+        <div className="flex items-center justify-between px-3 py-2 bg-rose-500/5 border border-rose-500/10 rounded-lg">
+          <span className="text-[10px] text-rose-500/60 font-medium">Behind</span>
+          <span className="text-xs font-mono font-bold text-rose-400">{node.behind}</span>
+        </div>
+      </div>
+
+      {/* Change Magnitude Bar */}
+      {node.additions !== undefined ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[10px] font-medium px-1">
+            <span className="text-slate-500 flex items-center gap-1.5">
+              <FileText size={12} /> {node.filesChanged} files changed
+            </span>
+            <div className="flex gap-2">
+              <span className="text-emerald-500 flex items-center gap-0.5"><Plus size={10} />{node.additions}</span>
+              <span className="text-rose-500 flex items-center gap-0.5"><Minus size={10} />{node.deletions}</span>
+            </div>
+          </div>
+          <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden flex">
+            <div 
+              className="h-full bg-emerald-500/60" 
+              style={{ width: `${(node.additions! / (node.additions! + node.deletions! || 1)) * 100}%` }} 
+            />
+            <div 
+              className="h-full bg-rose-500/60" 
+              style={{ width: `${(node.deletions! / (node.additions! + node.deletions! || 1)) * 100}%` }} 
+            />
+          </div>
+        </div>
+      ) : node.type !== 'trunk' ? (
+        <div className="flex items-center justify-center gap-2 py-2 text-[10px] text-slate-500 italic">
+          <Loader2 size={10} className="animate-spin" /> Fetching detailed diff...
+        </div>
+      ) : null}
+
+      {/* SHA Section */}
+      {node.sha && (
+        <div className="space-y-1.5 pt-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+              <GitCommit size={12} /> Latest SHA
+            </span>
+            <button 
+              onClick={copySha}
+              className="text-[10px] text-slate-500 hover:text-indigo-400 flex items-center gap-1 transition-colors"
+            >
+              {copied ? <Check size={10} /> : <Copy size={10} />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <div className="bg-black/40 px-3 py-2 rounded-lg font-mono text-[11px] text-slate-300 border border-white/5 break-all">
+            {node.sha}
+          </div>
+        </div>
+      )}
+
+      {/* Status Indicators */}
+      {(node.hasConflicts || !node.isMerged) && (
+        <div className="pt-1">
+          {node.hasConflicts ? (
+            <div className="flex items-center gap-2 px-3 py-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-[11px] text-rose-300 font-medium">
+              <AlertCircle size={14} className="text-rose-500" />
+              Merge conflicts detected
+            </div>
+          ) : !node.isMerged ? (
+            <div className="flex items-center gap-2 px-3 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[11px] text-indigo-300 font-medium">
+              <Activity size={14} className="text-indigo-500" />
+              Active development
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Action Button */}
+      <a 
+        href={githubLink}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white text-[11px] font-semibold rounded-lg transition-all active:scale-[0.98] shadow-lg shadow-indigo-500/20"
+      >
+        <ExternalLink size={12} />
+        View on GitHub
+        <ChevronRight size={12} />
+      </a>
+    </div>
+  );
+
   if (isMobile) {
     return (
       <>
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[55] animate-in fade-in duration-200" onClick={onClose} />
         <div className="fixed bottom-4 left-4 right-4 z-[60] animate-in slide-in-from-bottom-8 duration-300">
           <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-            {/* Header */}
             <div className="px-4 py-3 border-b border-white/5 flex items-start justify-between bg-white/[0.02]">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -123,46 +228,8 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
                 <X size={18} />
               </button>
             </div>
-            {/* Content - condensed for mobile */}
-            <div className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex items-center justify-between px-3 py-2 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
-                  <span className="text-[10px] text-emerald-500/60 font-medium">Ahead</span>
-                  <span className="text-xs font-mono font-bold text-emerald-400">{node.ahead}</span>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2 bg-rose-500/5 border border-rose-500/10 rounded-lg">
-                  <span className="text-[10px] text-rose-500/60 font-medium">Behind</span>
-                  <span className="text-xs font-mono font-bold text-rose-400">{node.behind}</span>
-                </div>
-              </div>
-
-              {(node.additions !== undefined || node.deletions !== undefined) && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[10px] font-medium px-1">
-                    <span className="text-slate-500 flex items-center gap-1.5">
-                      <FileText size={12} /> {node.filesChanged} files
-                    </span>
-                    <div className="flex gap-2">
-                      <span className="text-emerald-500">+{node.additions}</span>
-                      <span className="text-rose-500">-{node.deletions}</span>
-                    </div>
-                  </div>
-                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden flex">
-                    <div className="h-full bg-emerald-500/60" style={{ width: `${(node.additions! / (node.additions! + node.deletions! || 1)) * 100}%` }} />
-                    <div className="h-full bg-rose-500/60" style={{ width: `${(node.deletions! / (node.additions! + node.deletions! || 1)) * 100}%` }} />
-                  </div>
-                </div>
-              )}
-
-              <a 
-                href={githubLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20 active:scale-[0.98]"
-              >
-                <ExternalLink size={14} />
-                View on GitHub
-              </a>
+            <div className="max-h-[60vh] overflow-y-auto">
+              {statsContent}
             </div>
           </div>
         </div>
@@ -181,7 +248,6 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
       }}
     >
       <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden shadow-black/50">
-        {/* Header Section */}
         <div className="px-4 py-3 border-b border-white/5 flex items-start justify-between bg-white/[0.02]">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -210,96 +276,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
             <X size={14} />
           </button>
         </div>
-
-        {/* Content */}
-        <div className="p-4 space-y-4">
-          {/* Main Stats Row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex items-center justify-between px-3 py-2 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
-              <span className="text-[10px] text-emerald-500/60 font-medium">Ahead</span>
-              <span className="text-xs font-mono font-bold text-emerald-400">{node.ahead}</span>
-            </div>
-            <div className="flex items-center justify-between px-3 py-2 bg-rose-500/5 border border-rose-500/10 rounded-lg">
-              <span className="text-[10px] text-rose-500/60 font-medium">Behind</span>
-              <span className="text-xs font-mono font-bold text-rose-400">{node.behind}</span>
-            </div>
-          </div>
-
-          {/* Change Magnitude Bar */}
-          {(node.additions !== undefined || node.deletions !== undefined) && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[10px] font-medium px-1">
-                <span className="text-slate-500 flex items-center gap-1.5">
-                  <FileText size={12} /> {node.filesChanged} files changed
-                </span>
-                <div className="flex gap-2">
-                  <span className="text-emerald-500 flex items-center gap-0.5"><Plus size={10} />{node.additions}</span>
-                  <span className="text-rose-500 flex items-center gap-0.5"><Minus size={10} />{node.deletions}</span>
-                </div>
-              </div>
-              <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden flex">
-                <div 
-                  className="h-full bg-emerald-500/60" 
-                  style={{ width: `${(node.additions! / (node.additions! + node.deletions! || 1)) * 100}%` }} 
-                />
-                <div 
-                  className="h-full bg-rose-500/60" 
-                  style={{ width: `${(node.deletions! / (node.additions! + node.deletions! || 1)) * 100}%` }} 
-                />
-              </div>
-            </div>
-          )}
-
-          {/* SHA Section */}
-          {node.sha && (
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                  <GitCommit size={12} /> Latest SHA
-                </span>
-                <button 
-                  onClick={copySha}
-                  className="text-[10px] text-slate-500 hover:text-indigo-400 flex items-center gap-1 transition-colors"
-                >
-                  {copied ? <Check size={10} /> : <Copy size={10} />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-              <div className="bg-black/40 px-3 py-2 rounded-lg font-mono text-[11px] text-slate-300 border border-white/5 break-all">
-                {node.sha}
-              </div>
-            </div>
-          )}
-
-          {/* Status Indicators */}
-          {(node.hasConflicts || !node.isMerged) && (
-            <div className="pt-1">
-              {node.hasConflicts ? (
-                <div className="flex items-center gap-2 px-3 py-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-[11px] text-rose-300 font-medium">
-                  <AlertCircle size={14} className="text-rose-500" />
-                  Merge conflicts detected
-                </div>
-              ) : !node.isMerged ? (
-                <div className="flex items-center gap-2 px-3 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-[11px] text-indigo-300 font-medium">
-                  <Activity size={14} className="text-indigo-500" />
-                  Active development
-                </div>
-              ) : null}
-            </div>
-          )}
-
-          {/* Action Button */}
-          <a 
-            href={githubLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white text-[11px] font-semibold rounded-lg transition-all active:scale-[0.98] shadow-lg shadow-indigo-500/20"
-          >
-            <ExternalLink size={12} />
-            View on GitHub
-            <ChevronRight size={12} />
-          </a>
-        </div>
+        {statsContent}
       </div>
       
       {/* Connector Tail */}
