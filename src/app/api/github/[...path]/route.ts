@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     family: 4 
   };
 
-  return new Promise((resolve) => {
+  return new Promise<NextResponse>((resolve) => {
     const proxyReq = https.request(options, (proxyRes) => {
       let data = '';
       proxyRes.on('data', chunk => data += chunk);
