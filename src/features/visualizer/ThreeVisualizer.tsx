@@ -153,7 +153,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
     };
 
     const rootGroup = createBranch(tree, 0, 0);
-    rootGroup.position.y = -300;
+    rootGroup.position.y = -800;
     scene.add(rootGroup);
 
     const animate = (time: number) => {
