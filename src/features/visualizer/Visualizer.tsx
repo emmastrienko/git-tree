@@ -7,10 +7,19 @@ interface VisualizerProps {
   tree: VisualizerNode;
   growth?: number;
   isFetching?: boolean;
+  onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
 }
 
-export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetching }) => {
+interface InteractableRegion {
+  x: number;
+  y: number;
+  radius: number;
+  node: VisualizerNode;
+}
+
+export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetching, onSelect }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const interactableRegions = useRef<InteractableRegion[]>([]);
   const [smoothLimit, setSmoothLimit] = useState(0);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.8 });
   const [isDragging, setIsDragging] = useState(false);
@@ -38,18 +47,77 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    const dx = e.clientX - lastMousePos.x;
-    const dy = e.clientY - lastMousePos.y;
-    setTransform(prev => ({
-      ...prev,
-      x: prev.x + dx,
-      y: prev.y + dy
-    }));
-    setLastMousePos({ x: e.clientX, y: e.clientY });
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    if (isDragging) {
+      const dx = e.clientX - lastMousePos.x;
+      const dy = e.clientY - lastMousePos.y;
+      setTransform(prev => ({
+        ...prev,
+        x: prev.x + dx,
+        y: prev.y + dy
+      }));
+      setLastMousePos({ x: e.clientX, y: e.clientY });
+    } else {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      const mouseY = (e.clientY - rect.top) * scaleY;
+
+      let hovering = false;
+      for (const region of interactableRegions.current) {
+        const dist = Math.sqrt(Math.pow(mouseX - region.x, 2) + Math.pow(mouseY - region.y, 2));
+        if (dist < region.radius + 15) {
+          hovering = true;
+          break;
+        }
+      }
+      
+      const container = canvas.parentElement;
+      if (container) {
+        if (hovering) {
+          container.style.cursor = 'pointer';
+        } else {
+          container.style.cursor = 'grab';
+        }
+      }
+    }
   };
 
-  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (isDragging) {
+      const dx = Math.abs(e.clientX - lastMousePos.x);
+      const dy = Math.abs(e.clientY - lastMousePos.y);
+      if (dx < 5 && dy < 5) {
+        handleCanvasClick(e);
+      }
+    }
+    setIsDragging(false);
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const mouseX = (e.clientX - rect.left) * scaleX;
+    const mouseY = (e.clientY - rect.top) * scaleY;
+
+    for (let i = interactableRegions.current.length - 1; i >= 0; i--) {
+      const region = interactableRegions.current[i];
+      const dist = Math.sqrt(Math.pow(mouseX - region.x, 2) + Math.pow(mouseY - region.y, 2));
+      
+      if (dist < (region.radius + 15)) { 
+        // We pass the RAW mouse coordinates from the DOM for the floating tooltip
+        onSelect?.(region.node, { x: e.clientX - rect.left, y: e.clientY - rect.top });
+        return;
+      }
+    }
+  };
 
   useEffect(() => {
     let frame: number;
@@ -83,7 +151,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
     depth: number,
     currentAngle: number,
     metadata: any,
-    revealedLimit: number
+    revealedLimit: number,
+    index: number = 0
   ) => {
     if (node.discoveryIndex !== undefined && node.discoveryIndex > revealedLimit) return;
 
@@ -144,15 +213,16 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         const clampedAngle = Math.max(-1.4, Math.min(1.4, nextGlobalAngle));
         
         ctx.rotate(clampedAngle);
-        drawNode(ctx, child, time, progress, depth + 1, clampedAngle, metadata, revealedLimit);
+        drawNode(ctx, child, time, progress, depth + 1, clampedAngle, metadata, revealedLimit, i);
         ctx.restore();
       });
     } else {
       ctx.translate(0, -length);
       
+      const dotRadius = 6;
       if (nodeArrivalProgress > 0.8) {
         ctx.beginPath();
-        ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
         ctx.fillStyle = color;
         if (!node.isMerged) {
           ctx.shadowBlur = 15;
@@ -161,12 +231,23 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         ctx.fill();
         ctx.shadowBlur = 0;
 
+        const matrix = ctx.getTransform();
+        interactableRegions.current.push({
+          x: matrix.e,
+          y: matrix.f,
+          radius: dotRadius,
+          node
+        });
+
         ctx.save();
         ctx.rotate(-currentAngle);
         ctx.fillStyle = node.isMerged ? '#475569' : '#f1f5f9';
         ctx.font = 'bold 10px monospace';
         ctx.globalAlpha = (nodeArrivalProgress - 0.8) * 5;
-        ctx.fillText(node.name, 14, 4);
+        const side = getSide(node.name);
+        const yOffset = (index % 2 === 0 ? -4 : 8); 
+        ctx.textAlign = side > 0 ? 'left' : 'right';
+        ctx.fillText(node.name, side * 14, yOffset);
         ctx.restore();
       }
 
@@ -175,7 +256,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         const spread = 0.7 * Math.pow(0.8, depth);
         const angle = ((i / (node.children.length - 1)) - 0.5) * spread || 0.3;
         ctx.rotate(angle);
-        drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, metadata, revealedLimit);
+        drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, metadata, revealedLimit, i);
         ctx.restore();
       });
     }
@@ -191,15 +272,13 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
 
     let frameId: number;
     const render = (time: number) => {
+      interactableRegions.current = [];
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.save();
-      
-      // Apply Camera Transform
       ctx.translate(canvas.width / 2 + transform.x, canvas.height - 100 + transform.y);
       ctx.scale(transform.scale, transform.scale);
-      
-      drawNode(ctx, tree, time, growth, 0, 0, tree.metadata, smoothLimit);
+      drawNode(ctx, tree, time, growth, 0, 0, tree.metadata, smoothLimit, 0);
       ctx.restore();
       frameId = requestAnimationFrame(render);
     };
@@ -214,7 +293,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={() => setIsDragging(false)}
     >
       <canvas 
         ref={canvasRef} 

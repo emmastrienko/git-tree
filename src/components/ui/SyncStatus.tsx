@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Activity, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 interface SyncStatusProps {
   itemCount: number;
@@ -9,12 +9,14 @@ interface SyncStatusProps {
 
 export const SyncStatus: React.FC<SyncStatusProps> = ({ itemCount }) => {
   return (
-    <div className="absolute top-6 right-6 z-30 flex items-center gap-3 px-4 py-2 bg-slate-900/80 border border-indigo-500/20 rounded-full backdrop-blur-md shadow-2xl animate-in fade-in slide-in-from-top-4 duration-500">
-      <Activity className="text-indigo-500 animate-pulse" size={14} />
-      <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
-        Syncing: <span className="text-indigo-400 font-mono">{itemCount}</span> branches
-      </span>
-      <Loader2 className="animate-spin text-indigo-500/50" size={12} />
+    <div className="absolute top-6 right-6 z-30 flex items-center gap-3 px-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-lg backdrop-blur-md shadow-xl animate-in fade-in slide-in-from-top-2 duration-300">
+      <Loader2 className="animate-spin text-indigo-400" size={14} />
+      <div className="flex flex-col">
+        <span className="text-[10px] font-bold text-slate-100 uppercase tracking-tight">Syncing Repository</span>
+        <span className="text-[9px] text-slate-400 font-medium">
+          Processing <span className="text-indigo-300 font-mono">{itemCount}</span> branches...
+        </span>
+      </div>
     </div>
   );
 };

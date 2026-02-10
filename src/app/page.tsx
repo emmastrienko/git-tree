@@ -10,14 +10,27 @@ import { ThreeVisualizer } from '@/features/visualizer/ThreeVisualizer';
 import { ViewToggle } from '@/components/ui/ViewToggle';
 import { SyncStatus } from '@/components/ui/SyncStatus';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { NodeTooltip } from '@/components/ui/NodeTooltip';
 import { useGitTree } from '@/hooks/useGitTree';
-import { ViewMode } from '@/types';
+import { ViewMode, VisualizerNode } from '@/types';
 
 export default function Home() {
   const [repoUrl, setRepoUrl] = useState('facebook/react');
   const [viewMode, setViewMode] = useState<ViewMode>('branches');
   const [is3D, setIs3D] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<VisualizerNode | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const { loading, tree, items, growth, fetchTree } = useGitTree();
+
+  const handleFetch = () => {
+    setSelectedNode(null);
+    fetchTree(repoUrl, viewMode);
+  };
+
+  const handleSelect = (node: VisualizerNode, pos: { x: number; y: number }) => {
+    setSelectedNode(node);
+    setTooltipPos(pos);
+  };
 
   return (
     <MainLayout
@@ -27,7 +40,7 @@ export default function Home() {
           setRepoUrl={setRepoUrl} 
           viewMode={viewMode}
           setViewMode={setViewMode}
-          onFetch={() => fetchTree(repoUrl, viewMode)}
+          onFetch={handleFetch}
           loading={loading}
         />
       }
@@ -39,11 +52,29 @@ export default function Home() {
 
         {loading && tree && <SyncStatus itemCount={items.length} />}
 
+        {selectedNode && (
+          <NodeTooltip 
+            node={selectedNode} 
+            position={tooltipPos} 
+            repoUrl={repoUrl}
+            onClose={() => setSelectedNode(null)} 
+          />
+        )}
+
         {tree ? (
           is3D ? (
-            <ThreeVisualizer tree={tree} isFetching={loading} />
+            <ThreeVisualizer 
+              tree={tree} 
+              isFetching={loading} 
+              onSelect={handleSelect}
+            />
           ) : (
-            <Visualizer tree={tree} growth={growth} isFetching={loading} />
+            <Visualizer 
+              tree={tree} 
+              growth={growth} 
+              isFetching={loading} 
+              onSelect={handleSelect}
+            />
           )
         ) : (
           <EmptyState loading={loading} />
