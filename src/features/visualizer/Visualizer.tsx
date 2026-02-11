@@ -112,7 +112,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       const dist = Math.sqrt(Math.pow(mouseX - region.x, 2) + Math.pow(mouseY - region.y, 2));
       
       if (dist < (region.radius + 15)) { 
-        // We pass the RAW mouse coordinates from the DOM for the floating tooltip
         onSelect?.(region.node, { x: e.clientX - rect.left, y: e.clientY - rect.top });
         return;
       }
@@ -150,8 +149,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
     progress: number,
     depth: number,
     currentAngle: number,
-    metadata: any,
     revealedLimit: number,
+    rootMetadata: any,
     index: number = 0
   ) => {
     if (node.discoveryIndex !== undefined && node.discoveryIndex > revealedLimit) return;
@@ -169,11 +168,28 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
 
     ctx.save();
 
-    let color = '#6366f1'; 
-    if (node.hasConflicts) color = '#f43f5e'; 
+    // Dynamic Blue Scale based on rootMetadata for consistent relative coloring
+    let color = '#3b82f6'; 
+    if (node.hasConflicts) {
+      color = '#f43f5e';
+    } else if (node.lastUpdated && rootMetadata?.newestTimestamp) {
+      const current = new Date(node.lastUpdated).getTime();
+      const newest = rootMetadata.newestTimestamp;
+      const oldest = rootMetadata.oldestTimestamp;
+      const range = Math.max(newest - oldest, 1);
+      
+      const ratio = Math.max(0, Math.min(1, (current - oldest) / range));
+      
+      if (ratio > 0.8) color = '#60a5fa';
+      else if (ratio > 0.6) color = '#3b82f6';
+      else if (ratio > 0.4) color = '#2563eb';
+      else if (ratio > 0.2) color = '#1d4ed8';
+      else color = '#172554';
+    }
+
     if (node.isMerged) {
-      color = '#334155';
-      ctx.globalAlpha = 0.4;
+      color = '#1e293b';
+      ctx.globalAlpha = 0.25;
     }
 
     const trunkWidth = 18;
@@ -203,7 +219,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       branches.forEach((child, i) => {
         ctx.save();
         const side = getSide(child.name);
-        const ratio = 1 - (child.behind / (metadata?.maxBehind || 1));
+        const ratio = 1 - (child.behind / (rootMetadata?.maxBehind || 1));
         ctx.translate(0, -length * (0.2 + ratio * 0.75));
         ctx.translate(side * ((trunkWidth / 2) - 1), 0);
 
@@ -213,7 +229,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         const clampedAngle = Math.max(-1.4, Math.min(1.4, nextGlobalAngle));
         
         ctx.rotate(clampedAngle);
-        drawNode(ctx, child, time, progress, depth + 1, clampedAngle, metadata, revealedLimit, i);
+        drawNode(ctx, child, time, progress, depth + 1, clampedAngle, revealedLimit, rootMetadata, i);
         ctx.restore();
       });
     } else {
@@ -224,9 +240,10 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         ctx.beginPath();
         ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
         ctx.fillStyle = color;
-        if (!node.isMerged) {
-          ctx.shadowBlur = 15;
-          ctx.shadowColor = color;
+        // Extra glow for FRESH branches
+        if (node.lastUpdated && (new Date().getTime() - new Date(node.lastUpdated).getTime()) < 1000 * 60 * 60 * 24) {
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = '#818cf8';
         }
         ctx.fill();
         ctx.shadowBlur = 0;
@@ -256,7 +273,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         const spread = 0.7 * Math.pow(0.8, depth);
         const angle = ((i / (node.children.length - 1)) - 0.5) * spread || 0.3;
         ctx.rotate(angle);
-        drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, metadata, revealedLimit, i);
+        drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, revealedLimit, rootMetadata, i);
         ctx.restore();
       });
     }
@@ -278,7 +295,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       ctx.save();
       ctx.translate(canvas.width / 2 + transform.x, canvas.height - 100 + transform.y);
       ctx.scale(transform.scale, transform.scale);
-      drawNode(ctx, tree, time, growth, 0, 0, tree.metadata, smoothLimit, 0);
+      drawNode(ctx, tree, time, growth, 0, 0, smoothLimit, tree.metadata, 0);
       ctx.restore();
       frameId = requestAnimationFrame(render);
     };

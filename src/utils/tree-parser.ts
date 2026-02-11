@@ -14,9 +14,17 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
   }
 
   const trunk = nodes.get(defaultBranch)!;
+  
+  // Calculate age range for dynamic coloring
+  const timestamps = branches
+    .map(b => b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0)
+    .filter(t => t > 0);
+    
   trunk.metadata = {
     maxBehind: Math.max(...branches.map(b => b.behind), 1),
-    maxAhead: Math.max(...branches.map(b => b.ahead), 1)
+    maxAhead: Math.max(...branches.map(b => b.ahead), 1),
+    newestTimestamp: timestamps.length ? Math.max(...timestamps) : Date.now(),
+    oldestTimestamp: timestamps.length ? Math.min(...timestamps) : Date.now() - (30 * 24 * 60 * 60 * 1000)
   };
 
   branches.forEach(b => {

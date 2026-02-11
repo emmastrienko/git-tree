@@ -137,7 +137,6 @@ export const useGitTree = () => {
               const comp = await githubService.compare(owner, repo, base, b.name);
               const pr = openPRs.find(p => p.head.ref === b.name);
               
-              // ONLY fetch basic stats during initial load to save rate limits
               return {
                 name: b.name,
                 sha: b.commit.sha,
@@ -146,7 +145,10 @@ export const useGitTree = () => {
                 ahead: comp.ahead_by,
                 behind: comp.behind_by,
                 isMerged: comp.status === 'identical' || comp.status === 'behind',
-                hasConflicts: pr?.mergeable_state === 'dirty'
+                hasConflicts: pr?.mergeable_state === 'dirty',
+                lastUpdated: comp.commits?.length > 0 
+                  ? comp.commits[comp.commits.length - 1].commit.author.date 
+                  : undefined
               } as GitBranch;
             } catch (e: any) { 
               if (e.message?.includes('403')) throw e;

@@ -73,13 +73,13 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
     let isDisposed = false;
 
     // --- Tree Generation ---
-    const buildBranch = (node: VisualizerNode, depth = 0): THREE.Group => {
+    const buildBranch = (node: VisualizerNode, depth = 0, rootMeta: any = null): THREE.Group => {
       const isTrunk = node.type === 'trunk';
       const val = node.relativeAhead ?? node.ahead;
       
       const length = isTrunk ? TREE_LAYOUT.trunkLength : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
       const radius = isTrunk ? TREE_LAYOUT.trunkRadius : Math.max(TREE_LAYOUT.minRadius, 10 - depth * 2.5);
-      const dotSize = 15; // Uniform size for all points
+      const dotSize = 15; 
 
       const group = new THREE.Group();
       if (!isTrunk) animatedGroups.push(group);
@@ -92,9 +92,38 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       );
       
       const geo = new THREE.TubeGeometry(curve, 8, radius, 6, false);
-      const color = node.hasConflicts ? THEME.conflict : (isTrunk ? THEME.trunk : THEME.primary);
+      
+      // Dynamic Activity-based coloring (Blue scale)
+      let branchColor = isTrunk ? THEME.trunk : THEME.primary;
+      let emissiveIntensity = 0.05;
+
+      const meta = rootMeta || tree.metadata;
+      if (node.hasConflicts) {
+        branchColor = THEME.conflict;
+      } else if (node.lastUpdated && meta?.newestTimestamp) {
+        const current = new Date(node.lastUpdated).getTime();
+        const newest = meta.newestTimestamp;
+        const oldest = meta.oldestTimestamp;
+        const range = Math.max(newest - oldest, 1);
+        
+        const ratio = Math.max(0, Math.min(1, (current - oldest) / range));
+        
+        if (ratio > 0.8) {
+          branchColor = '#60a5fa'; // Newest -> Sky
+          emissiveIntensity = 0.5;
+        } 
+        else if (ratio > 0.6) branchColor = '#3b82f6'; // Fresh -> Azure
+        else if (ratio > 0.4) branchColor = '#2563eb'; // Middle -> Royal
+        else if (ratio > 0.2) branchColor = '#1d4ed8'; // Old -> Deep
+        else branchColor = '#172554'; // Oldest -> Midnight
+      }
+
+      if (node.isMerged) {
+        branchColor = '#1e293b';
+      }
+
       const mat = new THREE.MeshStandardMaterial({ 
-        color, 
+        color: branchColor, 
         transparent: node.isMerged, 
         opacity: node.isMerged ? 0.3 : 1,
         roughness: 0.5,
@@ -107,9 +136,13 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       disposables.push(geo, mat);
 
       if (!isTrunk) {
-        // Tip Marker - Uniform Size & Optimized segments
+        // Tip Marker - Matching color
         const tipGeo = new THREE.SphereGeometry(dotSize, 12, 12);
-        const tipMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.1 });
+        const tipMat = new THREE.MeshStandardMaterial({ 
+          color: branchColor, 
+          emissive: branchColor, 
+          emissiveIntensity 
+        });
         const tip = new THREE.Mesh(tipGeo, tipMat);
         tip.position.set(0, length, 0);
         tip.userData = { node };
@@ -140,10 +173,10 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       // Recursive growth
       const children = node.children || [];
       children.forEach((child, i) => {
-        const childBranch = buildBranch(child, depth + 1);
+        const childBranch = buildBranch(child, depth + 1, meta);
         
         if (isTrunk) {
-          const ratio = 1 - (child.behind / (node.metadata?.maxBehind || 1));
+          const ratio = 1 - (child.behind / (meta?.maxBehind || 1));
           childBranch.position.set(0, length * (0.2 + ratio * 0.75), 0);
           childBranch.rotation.y = (i * 137.5) * (Math.PI / 180); // Fibonacci phyllotaxis
           childBranch.rotation.z = TREE_LAYOUT.branchBaseAngle;
