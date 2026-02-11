@@ -37,6 +37,27 @@ export default function Home() {
     return findNode(tree);
   })() : null;
 
+  // Sync selectedNode when tree updates (for on-demand data)
+  useEffect(() => {
+    if (selectedNodeName && tree) {
+      const findNode = (curr: VisualizerNode): VisualizerNode | null => {
+        if (curr.name === selectedNodeName) return curr;
+        if (curr.children) {
+          for (const child of curr.children) {
+            const found = findNode(child);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const updated = findNode(tree);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedNode)) {
+        // Just trigger a re-render if data has changed
+        setSelectedNodeName(updated.name);
+      }
+    }
+  }, [tree, selectedNodeName, selectedNode]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlRepo = params.get('repo');
@@ -45,11 +66,11 @@ export default function Home() {
     const lastRepo = sessionStorage.getItem('last_repo_url');
     const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
 
-    // Priority: 1. URL params, 2. Session storage, 3. Default
-    const targetRepo = urlRepo || lastRepo || 'facebook/react';
-    const targetMode = urlMode || lastMode || 'branches';
+    // Only load automatically if we have a specific target from URL or Last Session
+    if (urlRepo || lastRepo) {
+      const targetRepo = urlRepo || lastRepo!;
+      const targetMode = urlMode || lastMode || 'branches';
 
-    if (targetRepo) {
       setRepoUrl(targetRepo);
       setViewMode(targetMode);
       fetchTree(targetRepo, targetMode);

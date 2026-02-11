@@ -58,7 +58,7 @@ export const Header: React.FC<Props> = ({ repoUrl, setRepoUrl, viewMode, setView
         disabled={loading}
         className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-lg shadow-indigo-600/20 active:scale-[0.98] min-w-[70px]"
       >
-        {loading ? '...' : 'Fetch'}
+        {loading ? 'Fetching...' : 'Fetch'}
       </button>
     </div>
   </header>
