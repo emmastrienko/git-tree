@@ -84,20 +84,20 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       const group = new THREE.Group();
       if (!isTrunk) animatedGroups.push(group);
 
-      // Branch Geometry
+      // Branch Geometry - Optimized segments (8 tubular, 6 radial)
       const curve = new THREE.QuadraticBezierCurve3(
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(isTrunk ? 0 : 30, length * 0.5, 0),
         new THREE.Vector3(0, length, 0)
       );
       
-      const geo = new THREE.TubeGeometry(curve, 16, radius, 8, false);
+      const geo = new THREE.TubeGeometry(curve, 8, radius, 6, false);
       const color = node.hasConflicts ? THEME.conflict : (isTrunk ? THEME.trunk : THEME.primary);
       const mat = new THREE.MeshStandardMaterial({ 
         color, 
         transparent: node.isMerged, 
         opacity: node.isMerged ? 0.3 : 1,
-        roughness: 0.4,
+        roughness: 0.5,
         metalness: 0.1
       });
 
@@ -107,32 +107,34 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       disposables.push(geo, mat);
 
       if (!isTrunk) {
-        // Tip Marker - Uniform Size
-        const tipGeo = new THREE.SphereGeometry(dotSize, 10, 10);
-        const tipMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.2 });
+        // Tip Marker - Uniform Size & Optimized segments
+        const tipGeo = new THREE.SphereGeometry(dotSize, 12, 12);
+        const tipMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.1 });
         const tip = new THREE.Mesh(tipGeo, tipMat);
         tip.position.set(0, length, 0);
         tip.userData = { node };
         group.add(tip);
         disposables.push(tipGeo, tipMat);
 
-        // Label Sprite - Moved closer
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
-        canvas.width = 512; canvas.height = 128;
-        ctx.fillStyle = THEME.text;
-        ctx.font = `bold ${Math.max(28, 44 - depth * 6)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.fillText(node.name, 256, 64);
-        
-        const tex = new THREE.CanvasTexture(canvas);
-        const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
-        const sprite = new THREE.Sprite(spriteMat);
-        const scale = Math.max(150, TREE_LAYOUT.labelScaleBase - depth * 40);
-        sprite.position.set(0, length + 25, 0); // Moved closer from 60
-        sprite.scale.set(scale, scale / 4, 1);
-        group.add(sprite);
-        disposables.push(tex, spriteMat);
+        // Label Sprite - Only show for top levels to save massive RAM
+        if (depth <= 2) {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d')!;
+          canvas.width = 256; canvas.height = 64; // Halved resolution
+          ctx.fillStyle = THEME.text;
+          ctx.font = `bold ${Math.max(24, 40 - depth * 6)}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.fillText(node.name, 128, 32);
+          
+          const tex = new THREE.CanvasTexture(canvas);
+          const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+          const sprite = new THREE.Sprite(spriteMat);
+          const scale = Math.max(120, 200 - depth * 40);
+          sprite.position.set(0, length + 25, 0);
+          sprite.scale.set(scale, scale / 4, 1);
+          group.add(sprite);
+          disposables.push(tex, spriteMat);
+        }
       }
 
       // Recursive growth
@@ -210,7 +212,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       const t = time * 0.001;
       
       animatedGroups.forEach((group, i) => {
-        group.rotation.x = Math.sin(t + i) * 0.015; // Gentle sway
+        group.rotation.x = Math.sin(t + i) * 0.015;
       });
 
       controls.update();
