@@ -37,22 +37,43 @@ export default function Home() {
     return findNode(tree);
   })() : null;
 
-  // Auto-load last session on mount
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlRepo = params.get('repo');
+    const urlMode = params.get('mode') as ViewMode;
+    
     const lastRepo = sessionStorage.getItem('last_repo_url');
     const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
-    
-    if (lastRepo) {
-      setRepoUrl(lastRepo);
-      if (lastMode) setViewMode(lastMode);
-      fetchTree(lastRepo, lastMode || 'branches');
+
+    // Priority: 1. URL params, 2. Session storage, 3. Default
+    const targetRepo = urlRepo || lastRepo || 'facebook/react';
+    const targetMode = urlMode || lastMode || 'branches';
+
+    if (targetRepo) {
+      setRepoUrl(targetRepo);
+      setViewMode(targetMode);
+      fetchTree(targetRepo, targetMode);
+      
+      if (!urlRepo) {
+        const newParams = new URLSearchParams();
+        newParams.set('repo', targetRepo);
+        newParams.set('mode', targetMode);
+        window.history.replaceState(null, '', `?${newParams.toString()}`);
+      }
     }
   }, [fetchTree]);
 
   const handleFetch = () => {
     setSelectedNodeName(null);
+    
     sessionStorage.setItem('last_repo_url', repoUrl);
     sessionStorage.setItem('last_view_mode', viewMode);
+    
+    const params = new URLSearchParams();
+    params.set('repo', repoUrl);
+    params.set('mode', viewMode);
+    window.history.pushState(null, '', `?${params.toString()}`);
+    
     fetchTree(repoUrl, viewMode);
   };
 
