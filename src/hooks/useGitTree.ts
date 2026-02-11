@@ -35,6 +35,11 @@ export const useGitTree = () => {
 
   useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
 
+  const clearCache = useCallback((repoUrl: string, mode: ViewMode) => {
+    const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
+    sessionStorage.removeItem(CACHE_PREFIX + `${cleanPath}/${mode}`);
+  }, []);
+
   const fetchNodeDetails = useCallback(async (repoUrl: string, node: VisualizerNode) => {
     if (node.additions !== undefined || node.type === 'trunk' || fetchingNodes.current.has(node.name)) return;
     
@@ -173,5 +178,5 @@ export const useGitTree = () => {
     }
   }, [animate]);
 
-  return { loading, error, tree, items, growth, fetchTree, fetchNodeDetails };
+  return { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
 };

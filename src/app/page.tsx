@@ -20,7 +20,7 @@ export default function Home() {
   const [is3D, setIs3D] = useState(false);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const { loading, error, tree, items, growth, fetchTree, fetchNodeDetails } = useGitTree();
+  const { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
 
   // Find the selected node in the current tree
   const selectedNode = tree ? (() => {
@@ -86,6 +86,9 @@ export default function Home() {
 
   const handleFetch = () => {
     setSelectedNodeName(null);
+    
+    // Force Refresh: Clear the cache for this specific repo/mode before fetching
+    clearCache(repoUrl, viewMode);
     
     sessionStorage.setItem('last_repo_url', repoUrl);
     sessionStorage.setItem('last_view_mode', viewMode);
