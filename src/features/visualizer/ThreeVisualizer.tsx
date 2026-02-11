@@ -5,190 +5,247 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { VisualizerNode } from '@/types';
 
-interface ThreeVisualizerProps {
-  tree: VisualizerNode;
-  isFetching?: boolean;
-  onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
-}
+const THEME = {
+  background: '#020617',
+  primary: '#6366f1',
+  trunk: '#334155',
+  conflict: '#f43f5e',
+  text: '#f1f5f9',
+  ambientIntensity: 0.6,
+  directIntensity: 1.2,
+};
+
+const TREE_LAYOUT = {
+  trunkLength: 800,
+  trunkRadius: 16,
+  minRadius: 2,
+  branchBaseAngle: 0.6,
+  labelScaleBase: 250,
+};
 
 export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  const lastTreeId = useRef<string>('');
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
+    // --- Scene Setup ---
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#020617');
+    scene.background = new THREE.Color(THEME.background);
 
-    const camera = new THREE.PerspectiveCamera(75, containerRef.current.clientWidth / containerRef.current.clientHeight, 0.1, 5000);
-    camera.position.set(0, 500, 1000);
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 10000);
+    if (!cameraRef.current) {
+      camera.position.set(0, 800, 1500);
+    } else {
+      camera.position.copy(cameraRef.current.position);
+      camera.quaternion.copy(cameraRef.current.quaternion);
+    }
+    cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
-    renderer.domElement.style.display = 'block'; // Prevent baseline spacing
-    containerRef.current.appendChild(renderer.domElement);
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    
+    if (controlsRef.current) {
+      controls.target.copy(controlsRef.current.target);
+    }
+    controlsRef.current = controls;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const light = new THREE.DirectionalLight(0x6366f1, 1);
-    light.position.set(100, 500, 100);
-    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, THEME.ambientIntensity));
+    const sun = new THREE.DirectionalLight(new THREE.Color(0xffffff), THEME.directIntensity);
+    sun.position.set(500, 1000, 500);
+    scene.add(sun);
 
-    const branchGroups: THREE.Group[] = [];
+    const animatedGroups: THREE.Group[] = [];
+    const disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
+    let isDisposed = false;
 
-    const createBranch = (
-      node: VisualizerNode, 
-      depth: number,
-      index: number
-    ): THREE.Group => {
+    // --- Tree Generation ---
+    const buildBranch = (node: VisualizerNode, depth = 0): THREE.Group => {
       const isTrunk = node.type === 'trunk';
       const val = node.relativeAhead ?? node.ahead;
       
-      // Use 2D-like length scaling
-      const length = isTrunk ? 800 : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
-      const radius = isTrunk ? 14 : Math.max(1.5, 8 - depth * 2);
+      const length = isTrunk ? TREE_LAYOUT.trunkLength : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
+      const radius = isTrunk ? TREE_LAYOUT.trunkRadius : Math.max(TREE_LAYOUT.minRadius, 10 - depth * 2.5);
+      const dotSize = 15; // Uniform size for all points
 
       const group = new THREE.Group();
-      branchGroups.push(group);
+      if (!isTrunk) animatedGroups.push(group);
 
-      // Create Curved Mesh matching 2D Quadratic Curve
-      const start = new THREE.Vector3(0, 0, 0);
-      const end = new THREE.Vector3(0, length, 0);
+      // Branch Geometry
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(isTrunk ? 0 : 30, length * 0.5, 0),
+        new THREE.Vector3(0, length, 0)
+      );
       
-      // Slight "bend" like 2D: Mid point offset is small and consistent
-      const curveIntensity = isTrunk ? 0 : 20; 
-      const mid = new THREE.Vector3(curveIntensity, length * 0.5, 0);
-      
-      const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
-      const geometry = new THREE.TubeGeometry(curve, 12, radius, 8, false);
-      
-      const color = node.hasConflicts ? '#f43f5e' : (isTrunk ? '#475569' : '#6366f1');
-      const material = new THREE.MeshStandardMaterial({ 
+      const geo = new THREE.TubeGeometry(curve, 16, radius, 8, false);
+      const color = node.hasConflicts ? THEME.conflict : (isTrunk ? THEME.trunk : THEME.primary);
+      const mat = new THREE.MeshStandardMaterial({ 
         color, 
         transparent: node.isMerged, 
-        opacity: node.isMerged ? 0.3 : 1 
+        opacity: node.isMerged ? 0.3 : 1,
+        roughness: 0.4,
+        metalness: 0.1
       });
 
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.userData = { node }; 
       group.add(mesh);
+      disposables.push(geo, mat);
 
-      // Tip Dot (Leaf)
       if (!isTrunk) {
-        const dotGeo = new THREE.SphereGeometry(radius * 1.5, 12, 12);
-        const dotMat = new THREE.MeshBasicMaterial({ color });
-        const dot = new THREE.Mesh(dotGeo, dotMat);
-        dot.position.copy(end);
-        group.add(dot);
+        // Tip Marker - Uniform Size
+        const tipGeo = new THREE.SphereGeometry(dotSize, 10, 10);
+        const tipMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.2 });
+        const tip = new THREE.Mesh(tipGeo, tipMat);
+        tip.position.set(0, length, 0);
+        tip.userData = { node };
+        group.add(tip);
+        disposables.push(tipGeo, tipMat);
 
-        // Labels for ALL branches
+        // Label Sprite - Moved closer
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
-        canvas.width = 512;
-        canvas.height = 128;
-        ctx.fillStyle = '#f1f5f9';
-        // Adjust font size based on depth for better hierarchy
-        const fontSize = Math.max(24, 40 - depth * 6);
-        ctx.font = `bold ${fontSize}px monospace`;
+        canvas.width = 512; canvas.height = 128;
+        ctx.fillStyle = THEME.text;
+        ctx.font = `bold ${Math.max(28, 44 - depth * 6)}px monospace`;
         ctx.textAlign = 'center';
         ctx.fillText(node.name, 256, 64);
         
-        const texture = new THREE.CanvasTexture(canvas);
-        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ 
-          map: texture,
-          sizeAttenuation: true,
-          depthTest: false, // Ensure labels are visible through geometry
-          transparent: true
-        }));
-        
-        // Scale labels based on depth, but keep them legible
-        const scale = Math.max(120, 220 - depth * 40);
-        sprite.position.set(0, length + 50, 0); // Increased offset
+        const tex = new THREE.CanvasTexture(canvas);
+        const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+        const sprite = new THREE.Sprite(spriteMat);
+        const scale = Math.max(150, TREE_LAYOUT.labelScaleBase - depth * 40);
+        sprite.position.set(0, length + 25, 0); // Moved closer from 60
         sprite.scale.set(scale, scale / 4, 1);
-        sprite.renderOrder = 100 + depth; // Higher render order for labels
         group.add(sprite);
+        disposables.push(tex, spriteMat);
       }
 
-      // Recursive Children (Matching 2D Logic)
-      if (isTrunk) {
-        const children = [...(node.children || [])].sort((a, b) => b.behind - a.behind);
-        children.forEach((child, i) => {
+      // Recursive growth
+      const children = node.children || [];
+      children.forEach((child, i) => {
+        const childBranch = buildBranch(child, depth + 1);
+        
+        if (isTrunk) {
           const ratio = 1 - (child.behind / (node.metadata?.maxBehind || 1));
-          const childBranch = createBranch(child, depth + 1, i);
-          
-          // Distribution along trunk
           childBranch.position.set(0, length * (0.2 + ratio * 0.75), 0);
-          
-          // 2D Spread logic converted to 3D
-          // phi = the plane of growth around the trunk
-          const phi = (i * 137.5) * (Math.PI / 180); 
-          // theta = the sprout angle (mimicking 2D's 0.5 * side)
-          const theta = 0.5; 
-          
-          childBranch.rotation.y = phi;
-          childBranch.rotation.z = theta;
-          
-          group.add(childBranch);
-        });
-      } else {
-        const childCount = node.children?.length || 0;
-        node.children?.forEach((child, i) => {
-          const childBranch = createBranch(child, depth + 1, i);
-          childBranch.position.copy(end);
-          
-          // Unified Curl Logic: Constant spread/angle regardless of depth
-          const spread = 0.6; 
-          const angle = childCount === 1 ? 0.25 : ((i / (childCount - 1)) - 0.5) * spread;
-          
-          // Stay in the same plane and curl in Z
+          childBranch.rotation.y = (i * 137.5) * (Math.PI / 180); // Fibonacci phyllotaxis
+          childBranch.rotation.z = TREE_LAYOUT.branchBaseAngle;
+        } else {
+          childBranch.position.set(0, length, 0);
+          const angle = children.length === 1 ? 0.3 : ((i / (children.length - 1)) - 0.5) * 0.8;
           childBranch.rotation.z = angle;
-          
-          group.add(childBranch);
-        });
-      }
+        }
+        group.add(childBranch);
+      });
 
       return group;
     };
 
-    const rootGroup = createBranch(tree, 0, 0);
-    rootGroup.position.y = -800;
-    scene.add(rootGroup);
+    const root = buildBranch(tree);
+    root.position.y = -600;
+    scene.add(root);
 
-    const animate = (time: number) => {
-      const t = time * 0.001;
-      requestAnimationFrame(animate);
+    // --- Interaction ---
+    const getTargetNode = (clientX: number, clientY: number) => {
+      const rect = container.getBoundingClientRect();
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(scene.children, true);
       
-      // Wind Effect (Slightly sway child rotations)
-      branchGroups.forEach((group, i) => {
-        if (group.rotation.z !== 0) {
-           // Mimic 2D swaying of mid-points/rotation
-           group.rotation.x = Math.sin(t + i) * 0.01;
+      for (const hit of hits) {
+        let obj: THREE.Object3D | null = hit.object;
+        while (obj) {
+          if (obj.userData?.node) return { node: obj.userData.node as VisualizerNode, x: clientX - rect.left, y: clientY - rect.top };
+          obj = obj.parent;
         }
+      }
+      return null;
+    };
+
+    let startPos = { x: 0, y: 0 };
+    
+    const onMove = (e: MouseEvent) => {
+      container.style.cursor = getTargetNode(e.clientX, e.clientY) ? 'pointer' : 'grab';
+    };
+
+    const onDown = (e: MouseEvent) => {
+      startPos = { x: e.clientX, y: e.clientY };
+      container.style.cursor = 'grabbing';
+    };
+
+    const onUp = (e: MouseEvent) => {
+      container.style.cursor = 'grab';
+      if (Math.abs(e.clientX - startPos.x) < 5 && Math.abs(e.clientY - startPos.y) < 5) {
+        const hit = getTargetNode(e.clientX, e.clientY);
+        if (hit && onSelect) onSelect(hit.node, { x: hit.x, y: hit.y });
+      }
+    };
+
+    container.addEventListener('mousemove', onMove);
+    container.addEventListener('mousedown', onDown);
+    container.addEventListener('mouseup', onUp);
+
+    // --- Loop ---
+    let frameId: number;
+    const animate = (time: number) => {
+      if (isDisposed) return;
+      frameId = requestAnimationFrame(animate);
+      const t = time * 0.001;
+      
+      animatedGroups.forEach((group, i) => {
+        group.rotation.x = Math.sin(t + i) * 0.015; // Gentle sway
       });
 
       controls.update();
       renderer.render(scene, camera);
     };
-    requestAnimationFrame(animate);
+    frameId = requestAnimationFrame(animate);
 
-    const handleResize = () => {
-      if (!containerRef.current) return;
-      camera.aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
+    const onResize = () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+      renderer.setSize(container.clientWidth, container.clientHeight);
     };
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', onResize);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      isDisposed = true;
+      cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', onResize);
+      container.removeEventListener('mousemove', onMove);
+      container.removeEventListener('mousedown', onDown);
+      container.removeEventListener('mouseup', onUp);
+      
+      disposables.forEach(asset => asset.dispose());
       renderer.dispose();
-      if (containerRef.current) {
-        containerRef.current.removeChild(renderer.domElement);
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
       }
     };
-  }, [tree]);
+  }, [tree, onSelect]);
 
-  return <div ref={containerRef} className="w-full h-full overflow-hidden" />;
+  return <div ref={containerRef} className="w-full h-full overflow-hidden touch-none" />;
 };
+
+interface ThreeVisualizerProps {
+  tree: VisualizerNode;
+  isFetching?: boolean;
+  onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
+}
