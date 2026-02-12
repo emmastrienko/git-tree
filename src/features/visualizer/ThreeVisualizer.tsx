@@ -23,14 +23,18 @@ const TREE_LAYOUT = {
   labelScaleBase: 250,
 };
 
-export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect }) => {
+export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ 
+  tree, 
+  onSelect, 
+  hoveredNodeName, 
+  onHover,
+  isDimmed 
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
-
-  const lastTreeId = useRef<string>('');
 
   useEffect(() => {
     const container = containerRef.current;
@@ -75,27 +79,27 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
     // --- Tree Generation ---
     const buildBranch = (node: VisualizerNode, depth = 0, rootMeta: any = null): THREE.Group => {
       const isTrunk = node.type === 'trunk';
+      const isHovered = hoveredNodeName === node.name;
+      const isOtherHovered = hoveredNodeName && !isHovered;
       const val = node.relativeAhead ?? node.ahead;
       
       const length = isTrunk ? TREE_LAYOUT.trunkLength : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
       const radius = isTrunk ? TREE_LAYOUT.trunkRadius : Math.max(TREE_LAYOUT.minRadius, 10 - depth * 2.5);
-      const dotSize = 15; 
+      const dotSize = isHovered ? 25 : 15; 
 
       const group = new THREE.Group();
       if (!isTrunk) animatedGroups.push(group);
 
-      // Branch Geometry - Optimized segments (8 tubular, 6 radial)
       const curve = new THREE.QuadraticBezierCurve3(
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(isTrunk ? 0 : 30, length * 0.5, 0),
         new THREE.Vector3(0, length, 0)
       );
       
-      const geo = new THREE.TubeGeometry(curve, 8, radius, 6, false);
+      const geo = new THREE.TubeGeometry(curve, 8, isHovered ? radius + 4 : radius, 6, false);
       
-      // Dynamic Activity-based coloring (Blue scale)
       let branchColor = isTrunk ? THEME.trunk : THEME.primary;
-      let emissiveIntensity = 0.05;
+      let emissiveIntensity = isHovered ? 0.8 : 0.05;
 
       const meta = rootMeta || tree.metadata;
       if (node.hasConflicts) {
@@ -105,27 +109,25 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
         const newest = meta.newestTimestamp;
         const oldest = meta.oldestTimestamp;
         const range = Math.max(newest - oldest, 1);
-        
         const ratio = Math.max(0, Math.min(1, (current - oldest) / range));
         
         if (ratio > 0.8) {
-          branchColor = '#60a5fa'; // Newest -> Sky
-          emissiveIntensity = 0.5;
+          branchColor = '#60a5fa'; 
+          if (!isHovered) emissiveIntensity = 0.5;
         } 
-        else if (ratio > 0.6) branchColor = '#3b82f6'; // Fresh -> Azure
-        else if (ratio > 0.4) branchColor = '#2563eb'; // Middle -> Royal
-        else if (ratio > 0.2) branchColor = '#1d4ed8'; // Old -> Deep
-        else branchColor = '#172554'; // Oldest -> Midnight
+        else if (ratio > 0.6) branchColor = '#3b82f6';
+        else if (ratio > 0.4) branchColor = '#2563eb';
+        else if (ratio > 0.2) branchColor = '#1d4ed8';
+        else branchColor = '#172554';
       }
 
-      if (node.isMerged) {
-        branchColor = '#1e293b';
-      }
+      if (isHovered) branchColor = '#ffffff';
+      if (node.isMerged && !isHovered) branchColor = '#1e293b';
 
       const mat = new THREE.MeshStandardMaterial({ 
         color: branchColor, 
-        transparent: node.isMerged, 
-        opacity: node.isMerged ? 0.3 : 1,
+        transparent: true, 
+        opacity: (isOtherHovered && isDimmed) ? 0.05 : (node.isMerged && !isHovered ? 0.3 : 1),
         roughness: 0.5,
         metalness: 0.1
       });
@@ -136,12 +138,13 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       disposables.push(geo, mat);
 
       if (!isTrunk) {
-        // Tip Marker - Matching color
         const tipGeo = new THREE.SphereGeometry(dotSize, 12, 12);
         const tipMat = new THREE.MeshStandardMaterial({ 
           color: branchColor, 
           emissive: branchColor, 
-          emissiveIntensity 
+          emissiveIntensity: (isOtherHovered && isDimmed) ? 0 : emissiveIntensity,
+          transparent: true,
+          opacity: (isOtherHovered && isDimmed) ? 0.05 : 1
         });
         const tip = new THREE.Mesh(tipGeo, tipMat);
         tip.position.set(0, length, 0);
@@ -149,36 +152,41 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
         group.add(tip);
         disposables.push(tipGeo, tipMat);
 
-        // Label Sprite - Only show for top levels to save massive RAM
-        if (depth <= 2) {
+        const shouldShowLabel = isHovered || (!isDimmed && depth <= 2);
+        
+        if (shouldShowLabel) {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d')!;
-          canvas.width = 256; canvas.height = 64; // Halved resolution
-          ctx.fillStyle = THEME.text;
-          ctx.font = `bold ${Math.max(24, 40 - depth * 6)}px monospace`;
+          canvas.width = 256; canvas.height = 64; 
+          ctx.fillStyle = isHovered ? '#ffffff' : THEME.text;
+          ctx.font = `bold ${isHovered ? 32 : Math.max(24, 40 - depth * 6)}px monospace`;
           ctx.textAlign = 'center';
           ctx.fillText(node.name, 128, 32);
           
           const tex = new THREE.CanvasTexture(canvas);
-          const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+          const spriteMat = new THREE.SpriteMaterial({ 
+            map: tex, 
+            transparent: true, 
+            depthTest: !isHovered,
+            opacity: isHovered ? 1 : 0.8
+          });
           const sprite = new THREE.Sprite(spriteMat);
-          const scale = Math.max(120, 200 - depth * 40);
+          const scale = isHovered ? 300 : Math.max(120, 200 - depth * 40);
           sprite.position.set(0, length + 25, 0);
           sprite.scale.set(scale, scale / 4, 1);
+          sprite.renderOrder = isHovered ? 999 : 0;
           group.add(sprite);
           disposables.push(tex, spriteMat);
         }
       }
 
-      // Recursive growth
       const children = node.children || [];
       children.forEach((child, i) => {
         const childBranch = buildBranch(child, depth + 1, meta);
-        
         if (isTrunk) {
           const ratio = 1 - (child.behind / (meta?.maxBehind || 1));
           childBranch.position.set(0, length * (0.2 + ratio * 0.75), 0);
-          childBranch.rotation.y = (i * 137.5) * (Math.PI / 180); // Fibonacci phyllotaxis
+          childBranch.rotation.y = (i * 137.5) * (Math.PI / 180);
           childBranch.rotation.z = TREE_LAYOUT.branchBaseAngle;
         } else {
           childBranch.position.set(0, length, 0);
@@ -195,15 +203,12 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
     root.position.y = -600;
     scene.add(root);
 
-    // --- Interaction ---
     const getTargetNode = (clientX: number, clientY: number) => {
       const rect = container.getBoundingClientRect();
       mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
       raycaster.setFromCamera(mouse, camera);
       const hits = raycaster.intersectObjects(scene.children, true);
-      
       for (const hit of hits) {
         let obj: THREE.Object3D | null = hit.object;
         while (obj) {
@@ -215,9 +220,13 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
     };
 
     let startPos = { x: 0, y: 0 };
-    
     const onMove = (e: MouseEvent) => {
-      container.style.cursor = getTargetNode(e.clientX, e.clientY) ? 'pointer' : 'grab';
+      const hit = getTargetNode(e.clientX, e.clientY);
+      container.style.cursor = hit ? 'pointer' : 'grab';
+      if (!isDimmed) {
+        const newHoverName = hit ? hit.node.name : null;
+        if (newHoverName !== hoveredNodeName) onHover?.(newHoverName);
+      }
     };
 
     const onDown = (e: MouseEvent) => {
@@ -237,17 +246,14 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
     container.addEventListener('mousedown', onDown);
     container.addEventListener('mouseup', onUp);
 
-    // --- Loop ---
     let frameId: number;
     const animate = (time: number) => {
       if (isDisposed) return;
       frameId = requestAnimationFrame(animate);
       const t = time * 0.001;
-      
       animatedGroups.forEach((group, i) => {
         group.rotation.x = Math.sin(t + i) * 0.015;
       });
-
       controls.update();
       renderer.render(scene, camera);
     };
@@ -267,14 +273,11 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
       container.removeEventListener('mousemove', onMove);
       container.removeEventListener('mousedown', onDown);
       container.removeEventListener('mouseup', onUp);
-      
       disposables.forEach(asset => asset.dispose());
       renderer.dispose();
-      if (container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
-      }
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
-  }, [tree, onSelect]);
+  }, [tree, onSelect, hoveredNodeName, isDimmed]);
 
   return <div ref={containerRef} className="w-full h-full overflow-hidden touch-none" />;
 };
@@ -282,5 +285,8 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ tree, onSelect
 interface ThreeVisualizerProps {
   tree: VisualizerNode;
   isFetching?: boolean;
+  hoveredNodeName?: string | null;
+  isDimmed?: boolean;
+  onHover?: (name: string | null) => void;
   onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
 }

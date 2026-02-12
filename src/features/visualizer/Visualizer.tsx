@@ -7,6 +7,9 @@ interface VisualizerProps {
   tree: VisualizerNode;
   growth?: number;
   isFetching?: boolean;
+  hoveredNodeName?: string | null;
+  isDimmed?: boolean; // New prop to control background dimming
+  onHover?: (name: string | null) => void;
   onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
 }
 
@@ -17,7 +20,15 @@ interface InteractableRegion {
   node: VisualizerNode;
 }
 
-export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetching, onSelect }) => {
+export const Visualizer: React.FC<VisualizerProps> = ({ 
+  tree, 
+  growth = 1, 
+  isFetching, 
+  hoveredNodeName,
+  isDimmed,
+  onHover,
+  onSelect 
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const interactableRegions = useRef<InteractableRegion[]>([]);
   const [smoothLimit, setSmoothLimit] = useState(0);
@@ -66,21 +77,27 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       const mouseX = (e.clientX - rect.left) * scaleX;
       const mouseY = (e.clientY - rect.top) * scaleY;
 
-      let hovering = false;
+      let hoveredNode: VisualizerNode | null = null;
       for (const region of interactableRegions.current) {
         const dist = Math.sqrt(Math.pow(mouseX - region.x, 2) + Math.pow(mouseY - region.y, 2));
         if (dist < region.radius + 15) {
-          hovering = true;
+          hoveredNode = region.node;
           break;
         }
       }
       
       const container = canvas.parentElement;
       if (container) {
-        if (hovering) {
+        if (hoveredNode) {
           container.style.cursor = 'pointer';
+          if (hoveredNode.name !== hoveredNodeName && !isDimmed) {
+            onHover?.(hoveredNode.name);
+          }
         } else {
           container.style.cursor = 'grab';
+          if (hoveredNodeName && !isDimmed) {
+            onHover?.(null);
+          }
         }
       }
     }
@@ -90,9 +107,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
     if (isDragging) {
       const dx = Math.abs(e.clientX - lastMousePos.x);
       const dy = Math.abs(e.clientY - lastMousePos.y);
-      if (dx < 5 && dy < 5) {
-        handleCanvasClick(e);
-      }
+      if (dx < 5 && dy < 5) handleCanvasClick(e);
     }
     setIsDragging(false);
   };
@@ -121,24 +136,17 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
   useEffect(() => {
     let frame: number;
     const target = (tree.children?.length || 0);
-    
     const update = () => {
-      setSmoothLimit(prev => {
-        if (prev < target) return prev + 0.2;
-        return prev;
-      });
+      setSmoothLimit(prev => (prev < target ? prev + 0.2 : prev));
       frame = requestAnimationFrame(update);
     };
-    
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
   }, [tree.children?.length]);
 
   const getSide = (name: string) => {
     let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return hash % 2 === 0 ? 1 : -1;
   };
 
@@ -160,6 +168,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       : 1;
 
     const isTrunk = node.type === 'trunk';
+    const isHovered = hoveredNodeName === node.name;
+    const isOtherHovered = hoveredNodeName && !isHovered;
     const val = node.relativeAhead ?? node.ahead;
     
     const length = isTrunk 
@@ -168,7 +178,10 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
 
     ctx.save();
 
-    // Dynamic Blue Scale based on rootMetadata for consistent relative coloring
+    // Dim effect - ONLY IF explicitly requested via isDimmed (from Sidebar)
+    if (isOtherHovered && isDimmed) ctx.globalAlpha = 0.1;
+
+    // Dynamic Blue Scale
     let color = '#3b82f6'; 
     if (node.hasConflicts) {
       color = '#f43f5e';
@@ -177,7 +190,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       const newest = rootMetadata.newestTimestamp;
       const oldest = rootMetadata.oldestTimestamp;
       const range = Math.max(newest - oldest, 1);
-      
       const ratio = Math.max(0, Math.min(1, (current - oldest) / range));
       
       if (ratio > 0.8) color = '#60a5fa';
@@ -189,7 +201,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
 
     if (node.isMerged) {
       color = '#1e293b';
-      ctx.globalAlpha = 0.25;
+      if (!isOtherHovered) ctx.globalAlpha = isHovered ? 0.6 : 0.25;
     }
 
     const trunkWidth = 18;
@@ -202,10 +214,20 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       const cp1y = -length / 2;
       ctx.quadraticCurveTo(cp1x, cp1y, 0, -length);
     }
+
+    if (isHovered) {
+      ctx.shadowBlur = 25;
+      ctx.shadowColor = '#fff';
+      ctx.lineWidth = isTrunk ? trunkWidth + 4 : Math.max(6, 14 - depth * 2.5);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.lineWidth = isTrunk ? trunkWidth : Math.max(3, 10 - depth * 2.5);
+    }
+
     ctx.strokeStyle = isTrunk ? '#1e293b' : color;
-    ctx.lineWidth = isTrunk ? trunkWidth : Math.max(3, 10 - depth * 2.5);
     ctx.lineCap = 'round';
     ctx.stroke();
+    ctx.shadowBlur = 0;
 
     if (isTrunk && isFetching) {
       const breathe = (Math.sin(time * 0.003) + 1) / 2;
@@ -222,49 +244,47 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         const ratio = 1 - (child.behind / (rootMetadata?.maxBehind || 1));
         ctx.translate(0, -length * (0.2 + ratio * 0.75));
         ctx.translate(side * ((trunkWidth / 2) - 1), 0);
-
         const spread = 1.8;
         let angle = branches.length === 1 ? 0.5 * side : (Math.abs(((i / (branches.length - 1)) - 0.5) * spread)) * side;
-        const nextGlobalAngle = currentAngle + angle;
-        const clampedAngle = Math.max(-1.4, Math.min(1.4, nextGlobalAngle));
-        
+        const clampedAngle = Math.max(-1.4, Math.min(1.4, currentAngle + angle));
         ctx.rotate(clampedAngle);
         drawNode(ctx, child, time, progress, depth + 1, clampedAngle, revealedLimit, rootMetadata, i);
         ctx.restore();
       });
     } else {
       ctx.translate(0, -length);
-      
-      const dotRadius = 6;
+      const dotRadius = isHovered ? 10 : 6;
       if (nodeArrivalProgress > 0.8) {
         ctx.beginPath();
         ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
         ctx.fillStyle = color;
-        // Extra glow for FRESH branches
-        if (node.lastUpdated && (new Date().getTime() - new Date(node.lastUpdated).getTime()) < 1000 * 60 * 60 * 24) {
-          ctx.shadowBlur = 20;
-          ctx.shadowColor = '#818cf8';
+        if (isHovered) {
+          ctx.shadowBlur = 30;
+          ctx.shadowColor = '#fff';
+          ctx.globalAlpha = 1;
+        } else if (node.lastUpdated && (new Date().getTime() - new Date(node.lastUpdated).getTime()) < 1000 * 60 * 60 * 24) {
+          if (!isOtherHovered || !isDimmed) {
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#818cf8';
+          }
         }
         ctx.fill();
         ctx.shadowBlur = 0;
 
         const matrix = ctx.getTransform();
-        interactableRegions.current.push({
-          x: matrix.e,
-          y: matrix.f,
-          radius: dotRadius,
-          node
-        });
+        interactableRegions.current.push({ x: matrix.e, y: matrix.f, radius: dotRadius, node });
 
         ctx.save();
         ctx.rotate(-currentAngle);
-        ctx.fillStyle = node.isMerged ? '#475569' : '#f1f5f9';
-        ctx.font = 'bold 10px monospace';
-        ctx.globalAlpha = (nodeArrivalProgress - 0.8) * 5;
+        ctx.fillStyle = isHovered ? '#fff' : (node.isMerged ? '#475569' : '#f1f5f9');
+        ctx.font = isHovered ? 'bold 12px monospace' : 'bold 10px monospace';
+        
+        if (isOtherHovered && isDimmed) ctx.globalAlpha = 0;
+        else ctx.globalAlpha = isHovered ? 1 : (nodeArrivalProgress - 0.8) * 5;
+
         const side = getSide(node.name);
-        const yOffset = (index % 2 === 0 ? -4 : 8); 
         ctx.textAlign = side > 0 ? 'left' : 'right';
-        ctx.fillText(node.name, side * 14, yOffset);
+        ctx.fillText(node.name, side * (isHovered ? 18 : 14), (index % 2 === 0 ? -4 : 8));
         ctx.restore();
       }
 
@@ -277,9 +297,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
         ctx.restore();
       });
     }
-
     ctx.restore();
-  }, [isFetching, tree.children]);
+  }, [isFetching, tree.children, hoveredNodeName, isDimmed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -312,12 +331,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({ tree, growth = 1, isFetc
       onMouseUp={handleMouseUp}
       onMouseLeave={() => setIsDragging(false)}
     >
-      <canvas 
-        ref={canvasRef} 
-        width={1400} 
-        height={1000} 
-        className="max-w-full max-h-full object-contain pointer-events-none" 
-      />
+      <canvas ref={canvasRef} width={1400} height={1000} className="max-w-full max-h-full object-contain pointer-events-none" />
     </div>
   );
 };

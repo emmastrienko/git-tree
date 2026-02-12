@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -19,6 +19,8 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('branches');
   const [is3D, setIs3D] = useState(false);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
+  const [hoveredNodeName, setHoveredNodeName] = useState<string | null>(null);
+  const [isSidebarHover, setIsSidebarHover] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
 
@@ -86,6 +88,8 @@ export default function Home() {
 
   const handleFetch = () => {
     setSelectedNodeName(null);
+    setHoveredNodeName(null);
+    setIsSidebarHover(false);
     
     // Force Refresh: Clear the cache for this specific repo/mode before fetching
     clearCache(repoUrl, viewMode);
@@ -101,10 +105,23 @@ export default function Home() {
     fetchTree(repoUrl, viewMode);
   };
 
-  const handleSelect = (node: VisualizerNode, pos: { x: number; y: number }) => {
+  const handleSelect = useCallback((node: VisualizerNode, pos: { x: number; y: number }) => {
     setSelectedNodeName(node.name);
     setTooltipPos(pos);
-  };
+  }, []);
+
+  const handleSidebarSelect = useCallback((name: string) => {
+    const findAndSelect = (curr: VisualizerNode) => {
+      if (curr.name === name) handleSelect(curr, { x: 400, y: 400 });
+      curr.children?.forEach(findAndSelect);
+    };
+    if (tree) findAndSelect(tree);
+  }, [tree, handleSelect]);
+
+  const handleSidebarHover = useCallback((name: string | null) => {
+    setHoveredNodeName(name);
+    setIsSidebarHover(!!name);
+  }, []);
 
   return (
     <MainLayout
@@ -119,7 +136,14 @@ export default function Home() {
           onMenuClick={onMenuClick}
         />
       )}
-      sidebar={<Sidebar viewMode={viewMode} items={items} />}
+      sidebar={
+        <Sidebar 
+          viewMode={viewMode} 
+          items={items} 
+          onHover={handleSidebarHover}
+          onSelect={handleSidebarSelect}
+        />
+      }
       footer={<Footer />}
     >
       <div className="w-full h-full relative group">
@@ -141,12 +165,18 @@ export default function Home() {
           is3D ? (
             <ThreeVisualizer 
               tree={tree} 
+              hoveredNodeName={hoveredNodeName}
+              isDimmed={isSidebarHover}
+              onHover={setHoveredNodeName}
               isFetching={loading} 
               onSelect={handleSelect}
             />
           ) : (
             <Visualizer 
               tree={tree} 
+              hoveredNodeName={hoveredNodeName}
+              isDimmed={isSidebarHover}
+              onHover={setHoveredNodeName}
               growth={growth} 
               isFetching={loading} 
               onSelect={handleSelect}

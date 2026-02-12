@@ -33,6 +33,10 @@ export interface GitBranch {
   deletions?: number;
   filesChanged?: number;
   lastUpdated?: string;
+  author?: {
+    login: string;
+    avatarUrl?: string;
+  };
 }
 
 export interface VisualizerNode {
@@ -51,4 +55,8 @@ export interface VisualizerNode {
   deletions?: number;
   filesChanged?: number;
   lastUpdated?: string;
+  author?: {
+    login: string;
+    avatarUrl?: string;
+  };
 }

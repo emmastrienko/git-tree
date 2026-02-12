@@ -276,6 +276,21 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
             <X size={14} />
           </button>
         </div>
+        
+        {/* Author Section */}
+        {node.author && (
+          <div className="px-4 py-2 bg-white/[0.03] border-b border-white/5 flex items-center gap-2">
+            {node.author.avatarUrl ? (
+              <img src={node.author.avatarUrl} className="w-5 h-5 rounded-full border border-white/10" alt="" />
+            ) : (
+              <div className="w-5 h-5 rounded-full bg-white/5 border border-white/10" />
+            )}
+            <span className="text-[11px] text-slate-400">
+              Last committed by <span className="font-bold text-slate-200">{node.author.login}</span>
+            </span>
+          </div>
+        )}
+
         {statsContent}
       </div>
       

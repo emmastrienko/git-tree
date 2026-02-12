@@ -50,12 +50,17 @@ export const useGitTree = () => {
     try {
       const baseBranch = tree?.name || 'main';
       const comp = await githubService.compare(owner, repo, baseBranch, node.name);
+      const latestCommit = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
       
       const details = {
         additions: comp.files?.reduce((acc: number, f: any) => acc + f.additions, 0) || 0,
         deletions: comp.files?.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0,
         filesChanged: comp.files?.length || 0,
-        lastUpdated: comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1].commit.author.date : undefined
+        lastUpdated: latestCommit?.commit.author.date,
+        author: latestCommit ? {
+          login: latestCommit.author?.login || latestCommit.commit.author.name,
+          avatarUrl: latestCommit.author?.avatar_url
+        } : undefined
       };
 
       let newItems: any[] = [];
@@ -136,6 +141,7 @@ export const useGitTree = () => {
             try {
               const comp = await githubService.compare(owner, repo, base, b.name);
               const pr = openPRs.find(p => p.head.ref === b.name);
+              const latestCommit = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
               
               return {
                 name: b.name,
@@ -146,9 +152,11 @@ export const useGitTree = () => {
                 behind: comp.behind_by,
                 isMerged: comp.status === 'identical' || comp.status === 'behind',
                 hasConflicts: pr?.mergeable_state === 'dirty',
-                lastUpdated: comp.commits?.length > 0 
-                  ? comp.commits[comp.commits.length - 1].commit.author.date 
-                  : undefined
+                lastUpdated: latestCommit?.commit.author.date,
+                author: latestCommit ? {
+                  login: latestCommit.author?.login || latestCommit.commit.author.name,
+                  avatarUrl: latestCommit.author?.avatar_url
+                } : undefined
               } as GitBranch;
             } catch (e: any) { 
               if (e.message?.includes('403')) throw e;

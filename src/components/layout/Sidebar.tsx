@@ -7,9 +7,23 @@ import { GitBranch, GitPullRequest, ViewMode } from '@/types';
 interface Props {
   viewMode: ViewMode;
   items: any[];
+  onHover?: (name: string | null) => void;
+  onSelect?: (name: string) => void;
 }
 
-export const Sidebar: React.FC<Props> = ({ viewMode, items }) => {
+const formatShortDate = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days}d`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredItems = items.filter(item => {
@@ -53,34 +67,59 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
-        <div className="flex flex-col gap-0.5">
-          {filteredItems.map((item, i) => (
-            <button 
-              key={i} 
-              className="w-full text-left px-3 py-2 rounded-md hover:bg-white/[0.03] active:bg-white/[0.06] group transition-all flex items-start gap-3"
-            >
-              <div className="mt-1 text-slate-600 group-hover:text-indigo-400 transition-colors">
-                {viewMode === 'branches' ? <GitBranchIcon size={12} /> : <GitPRIcon size={12} />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-medium text-slate-300 truncate group-hover:text-slate-100 transition-colors">
-                  {viewMode === 'branches' ? (item as GitBranch).name : (item as GitPullRequest).title}
+        <div className="flex flex-col gap-0.5" onMouseLeave={() => onHover?.(null)}>
+          {filteredItems.map((item, i) => {
+            const b = item as GitBranch;
+            const name = viewMode === 'branches' ? b.name : (item as GitPullRequest).title;
+            return (
+              <button 
+                key={i} 
+                onMouseEnter={() => onHover?.(name)}
+                onClick={() => onSelect?.(name)}
+                className="w-full text-left px-3 py-2 rounded-md hover:bg-white/[0.03] active:bg-white/[0.06] group transition-all flex items-start gap-3"
+              >
+                <div className="mt-1 text-slate-600 group-hover:text-indigo-400 transition-colors">
+                  {viewMode === 'branches' ? <GitBranchIcon size={12} /> : <GitPRIcon size={12} />}
                 </div>
-                {viewMode === 'branches' && (
-                  <div className="flex items-center gap-3 mt-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                    <div className="flex items-center gap-1">
-                      <div className="w-1 h-1 rounded-full bg-emerald-500" />
-                      <span className="text-[9px] font-mono text-slate-400">{(item as GitBranch).ahead}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[12px] font-medium text-slate-300 truncate group-hover:text-slate-100 transition-colors">
+                      {name}
                     </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-1 h-1 rounded-full bg-rose-500" />
-                      <span className="text-[9px] font-mono text-slate-400">{(item as GitBranch).behind}</span>
-                    </div>
+                    {b.lastUpdated && (
+                      <span className="text-[9px] text-slate-600 whitespace-nowrap">{formatShortDate(b.lastUpdated)}</span>
+                    )}
                   </div>
-                )}
-              </div>
-            </button>
-          ))}
+                  
+                  <div className="flex items-center justify-between mt-1">
+                    {viewMode === 'branches' && (
+                      <div className="flex items-center gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1">
+                          <div className="w-1 h-1 rounded-full bg-emerald-500" />
+                          <span className="text-[9px] font-mono text-slate-400">{b.ahead}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-1 h-1 rounded-full bg-rose-500" />
+                          <span className="text-[9px] font-mono text-slate-400">{b.behind}</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {b.author && (
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <span className="text-[9px] text-slate-600 hidden group-hover:inline">{b.author.login}</span>
+                        {b.author.avatarUrl ? (
+                          <img src={b.author.avatarUrl} className="w-3.5 h-3.5 rounded-full border border-white/10" alt="" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 rounded-full bg-white/5 border border-white/10" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
           
           {items.length > 0 && filteredItems.length === 0 && (
             <div className="py-8 px-4 text-center">
