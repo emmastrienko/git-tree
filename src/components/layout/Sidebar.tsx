@@ -1,7 +1,5 @@
-'use client';
-
 import React, { useState } from 'react';
-import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X } from 'lucide-react';
+import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X, ArrowUpDown } from 'lucide-react';
 import { GitBranch, GitPullRequest, ViewMode } from '@/types';
 
 interface Props {
@@ -10,6 +8,8 @@ interface Props {
   onHover?: (name: string | null) => void;
   onSelect?: (name: string) => void;
 }
+
+type SortOption = 'recent' | 'name';
 
 const formatShortDate = (dateStr?: string) => {
   if (!dateStr) return '';
@@ -25,8 +25,33 @@ const formatShortDate = (dateStr?: string) => {
 
 export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<SortOption>('recent');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const filteredItems = items.filter(item => {
+  const handleSortChange = (option: SortOption) => {
+    if (sortBy === option) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(option);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedItems = [...items].sort((a, b) => {
+    let result = 0;
+    if (sortBy === 'recent') {
+      const timeA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+      const timeB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+      result = timeB - timeA;
+    } else {
+      const nameA = viewMode === 'branches' ? (a as GitBranch).name : (a as GitPullRequest).title;
+      const nameB = viewMode === 'branches' ? (b as GitBranch).name : (b as GitPullRequest).title;
+      result = nameA.localeCompare(nameB);
+    }
+    return sortDirection === 'asc' ? result : -result;
+  });
+
+  const filteredItems = sortedItems.filter(item => {
     const name = viewMode === 'branches' 
       ? (item as GitBranch).name 
       : (item as GitPullRequest).title;
@@ -35,14 +60,34 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
 
   return (
     <aside className="w-full h-full border-r border-border bg-slate-900 lg:bg-slate-950/50 flex flex-col shrink-0 z-10 shadow-2xl lg:shadow-none">
-      <div className="p-4 border-b border-border bg-white/[0.01] space-y-3">
-        <div className="flex items-center justify-between mb-1">
+      <div className="p-4 border-b border-border bg-white/[0.01] space-y-4">
+        <div className="flex items-center justify-between">
           <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
             {viewMode === 'branches' ? 'Branches' : 'Pull Requests'}
           </h2>
           <span className="text-[10px] font-mono text-slate-600">
             {searchQuery ? `${filteredItems.length} / ${items.length}` : items.length}
           </span>
+        </div>
+
+        {/* User-Friendly Sort Tabs */}
+        <div className="flex bg-black/20 p-0.5 rounded-md border border-white/5">
+          {(['recent', 'name'] as SortOption[]).map((option) => (
+            <button
+              key={option}
+              onClick={() => handleSortChange(option)}
+              className={`flex-1 py-1 text-[9px] font-bold uppercase tracking-tight rounded transition-all flex items-center justify-center gap-1 ${
+                sortBy === option 
+                  ? 'bg-indigo-600 text-white shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {option === 'recent' ? (sortDirection === 'asc' ? 'Newest' : 'Oldest') : (sortDirection === 'asc' ? 'A-Z' : 'Z-A')}
+              {sortBy === option && (
+                <ArrowUpDown size={8} />
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Search Input */}
