@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X, ArrowUpDown } from 'lucide-react';
 import { GitBranch, GitPullRequest, ViewMode } from '@/types';
@@ -44,17 +46,17 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
       const timeB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
       result = timeB - timeA;
     } else {
-      const nameA = viewMode === 'branches' ? (a as GitBranch).name : (a as GitPullRequest).title;
-      const nameB = viewMode === 'branches' ? (b as GitBranch).name : (b as GitPullRequest).title;
+      const nameA = (viewMode === 'branches' ? (a as GitBranch).name : (a as GitPullRequest).title) || '';
+      const nameB = (viewMode === 'branches' ? (b as GitBranch).name : (b as GitPullRequest).title) || '';
       result = nameA.localeCompare(nameB);
     }
     return sortDirection === 'asc' ? result : -result;
   });
 
   const filteredItems = sortedItems.filter(item => {
-    const name = viewMode === 'branches' 
+    const name = (viewMode === 'branches' 
       ? (item as GitBranch).name 
-      : (item as GitPullRequest).title;
+      : (item as GitPullRequest).title) || '';
     return name.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
@@ -114,13 +116,18 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
       <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
         <div className="flex flex-col gap-0.5" onMouseLeave={() => onHover?.(null)}>
           {filteredItems.map((item, i) => {
-            const b = item as GitBranch;
-            const name = viewMode === 'branches' ? b.name : (item as GitPullRequest).title;
+            const b = item as any;
+            const name = viewMode === 'branches' 
+              ? b.name 
+              : (b.title || b.metadata?.displayTitle || 'Untitled PR');
+            
+            const hoverKey = viewMode === 'branches' ? b.name : (b.head?.ref || b.name);
+
             return (
               <button 
                 key={i} 
-                onMouseEnter={() => onHover?.(name)}
-                onClick={() => onSelect?.(name)}
+                onMouseEnter={() => onHover?.(hoverKey)}
+                onClick={() => onSelect?.(hoverKey)}
                 className="w-full text-left px-3 py-2 rounded-md hover:bg-white/[0.03] active:bg-white/[0.06] group transition-all flex items-start gap-3"
               >
                 <div className="mt-1 text-slate-600 group-hover:text-indigo-400 transition-colors">

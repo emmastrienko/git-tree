@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -22,10 +22,14 @@ export default function Home() {
   const [hoveredNodeName, setHoveredNodeName] = useState<string | null>(null);
   const [isSidebarHover, setIsSidebarHover] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [treeKey, setTreeKey] = useState(0); 
   const { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
+  const isInitialized = useRef(false);
 
-  // Find the selected node in the current tree
-  const selectedNode = tree ? (() => {
+  // Derive selectedNode from tree and selectedNodeName
+  const selectedNode = useMemo(() => {
+    if (!tree || !selectedNodeName) return null;
+    
     const findNode = (curr: VisualizerNode): VisualizerNode | null => {
       if (curr.name === selectedNodeName) return curr;
       if (curr.children) {
@@ -37,30 +41,17 @@ export default function Home() {
       return null;
     };
     return findNode(tree);
-  })() : null;
+  }, [tree, selectedNodeName]);
 
-  // Sync selectedNode when tree updates (for on-demand data)
+  // Force re-render when tree content updates
   useEffect(() => {
-    if (selectedNodeName && tree) {
-      const findNode = (curr: VisualizerNode): VisualizerNode | null => {
-        if (curr.name === selectedNodeName) return curr;
-        if (curr.children) {
-          for (const child of curr.children) {
-            const found = findNode(child);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-      const updated = findNode(tree);
-      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedNode)) {
-        // Just trigger a re-render if data has changed
-        setSelectedNodeName(updated.name);
-      }
-    }
-  }, [tree, selectedNodeName, selectedNode]);
+    if (tree) setTreeKey(prev => prev + 1);
+  }, [tree]);
 
+  // Initial Load only
   useEffect(() => {
+    if (isInitialized.current) return;
+    
     const params = new URLSearchParams(window.location.search);
     const urlRepo = params.get('repo');
     const urlMode = params.get('mode') as ViewMode;
@@ -68,30 +59,36 @@ export default function Home() {
     const lastRepo = sessionStorage.getItem('last_repo_url');
     const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
 
-    // Only load automatically if we have a specific target from URL or Last Session
-    if (urlRepo || lastRepo) {
-      const targetRepo = urlRepo || lastRepo!;
-      const targetMode = urlMode || lastMode || 'branches';
+    const targetRepo = urlRepo || lastRepo;
+    const targetMode = urlMode || lastMode || 'branches';
 
+    if (targetRepo) {
       setRepoUrl(targetRepo);
       setViewMode(targetMode);
       fetchTree(targetRepo, targetMode);
-      
-      if (!urlRepo) {
-        const newParams = new URLSearchParams();
-        newParams.set('repo', targetRepo);
-        newParams.set('mode', targetMode);
-        window.history.replaceState(null, '', `?${newParams.toString()}`);
-      }
+      isInitialized.current = true;
     }
   }, [fetchTree]);
 
-  const handleFetch = () => {
+  // React to mode changes AFTER initialization
+  useEffect(() => {
+    if (!isInitialized.current) return;
+    
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') !== viewMode || params.get('repo') !== repoUrl) {
+      params.set('repo', repoUrl);
+      params.set('mode', viewMode);
+      window.history.pushState(null, '', `?${params.toString()}`);
+      sessionStorage.setItem('last_view_mode', viewMode);
+      fetchTree(repoUrl, viewMode);
+    }
+  }, [viewMode, repoUrl, fetchTree]);
+
+  const handleFetch = useCallback(() => {
     setSelectedNodeName(null);
     setHoveredNodeName(null);
     setIsSidebarHover(false);
     
-    // Force Refresh: Clear the cache for this specific repo/mode before fetching
     clearCache(repoUrl, viewMode);
     
     sessionStorage.setItem('last_repo_url', repoUrl);
@@ -103,7 +100,8 @@ export default function Home() {
     window.history.pushState(null, '', `?${params.toString()}`);
     
     fetchTree(repoUrl, viewMode);
-  };
+    isInitialized.current = true;
+  }, [repoUrl, viewMode, clearCache, fetchTree]);
 
   const handleSelect = useCallback((node: VisualizerNode, pos: { x: number; y: number }) => {
     setSelectedNodeName(node.name);
@@ -164,6 +162,7 @@ export default function Home() {
         {tree && !error ? (
           is3D ? (
             <ThreeVisualizer 
+              key={`3d-${treeKey}`}
               tree={tree} 
               hoveredNodeName={hoveredNodeName}
               isDimmed={isSidebarHover}
@@ -173,6 +172,7 @@ export default function Home() {
             />
           ) : (
             <Visualizer 
+              key={`2d-${treeKey}`}
               tree={tree} 
               hoveredNodeName={hoveredNodeName}
               isDimmed={isSidebarHover}

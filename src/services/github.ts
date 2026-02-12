@@ -1,9 +1,15 @@
 import { GitBranch, GitPullRequest } from '@/types';
 
 const fetcher = async <T>(url: string): Promise<T> => {
+  console.log(`[GitHub API] Fetching: ${url}`);
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`GitHub API: ${res.status}`);
-  return res.json();
+  if (!res.ok) {
+    console.error(`[GitHub API] Error ${res.status} for ${url}`);
+    throw new Error(`GitHub API: ${res.status}`);
+  }
+  const data = await res.json();
+  console.log(`[GitHub API] Success: ${url}`, data);
+  return data;
 };
 
 export const githubService = {
@@ -29,8 +35,18 @@ export const githubService = {
   },
 
   getPullRequests: (owner: string, repo: string) => 
-    fetcher<GitPullRequest[]>(`/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=50`),
+    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=50`),
 
-  compare: (owner: string, repo: string, base: string, head: string) => 
-    fetcher<any>(`/api/github/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`),
+  getPullRequestReviews: (owner: string, repo: string, pullNumber: number) =>
+    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`),
+
+  getPullRequestFiles: (owner: string, repo: string, pullNumber: number) =>
+    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`),
+
+  compare: (owner: string, repo: string, base: string, head: string) => {
+    // Double-encoding is often required for branch names with slashes in the Compare API
+    const encodedBase = encodeURIComponent(base);
+    const encodedHead = encodeURIComponent(head);
+    return fetcher<any>(`/api/github/repos/${owner}/${repo}/compare/${encodedBase}...${encodedHead}`);
+  },
 };

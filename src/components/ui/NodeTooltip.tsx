@@ -266,7 +266,8 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
               )}
             </div>
             <h2 className="text-sm font-semibold text-slate-100 truncate tracking-tight">
-              {node.name}
+              {node.metadata?.displayTitle || node.name}
+              {node.metadata?.prNumber && <span className="ml-2 text-slate-500 font-mono">#{node.metadata.prNumber}</span>}
             </h2>
           </div>
           <button 

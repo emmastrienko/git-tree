@@ -40,7 +40,8 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
 
       const isAncestor = bHistory.has(p.sha) || 
                         (b.mergeBaseSha === p.mergeBaseSha && b.ahead > p.ahead) ||
-                        (b.behind === p.behind && b.ahead > p.ahead);
+                        (b.behind === p.behind && b.ahead > p.ahead) ||
+                        (b.metadata?.baseBranch === p.name); // Match PR to its target branch
 
       if (isAncestor && p.ahead > maxScore) {
         maxScore = p.ahead;
@@ -57,4 +58,39 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
   });
 
   return trunk;
+};
+
+export const parseFileTree = (files: any[]): VisualizerNode => {
+  const root: VisualizerNode = {
+    name: 'root',
+    type: 'folder',
+    children: [],
+    ahead: 0,
+    behind: 0
+  };
+
+  files.forEach(file => {
+    const parts = file.filename.split('/');
+    let current = root;
+
+    parts.forEach((part: string, i: number) => {
+      const isLast = i === parts.length - 1;
+      let child = current.children.find(c => c.name === part);
+
+      if (!child) {
+        child = {
+          name: part,
+          type: isLast ? 'file' : 'folder',
+          children: [],
+          ahead: 0,
+          behind: 0,
+          metadata: isLast ? { additions: file.additions, deletions: file.deletions } : {}
+        };
+        current.children.push(child);
+      }
+      current = child;
+    });
+  });
+
+  return root;
 };

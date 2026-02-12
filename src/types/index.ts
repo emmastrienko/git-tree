@@ -10,12 +10,18 @@ export interface GitPullRequest {
   number: number;
   html_url: string;
   state: string;
+  draft?: boolean;
   mergeable_state?: string;
+  review_status?: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING';
   head: {
     ref: string;
     sha: string;
   };
   user: GitHubUser;
+  // Metadata for tree-parsing
+  ahead: number;
+  behind: number;
+  lastUpdated?: string;
 }
 
 export interface GitBranch {
@@ -37,6 +43,8 @@ export interface GitBranch {
     login: string;
     avatarUrl?: string;
   };
+  fileTree?: VisualizerNode;
+  metadata?: any;
 }
 
 export interface VisualizerNode {
@@ -59,4 +67,5 @@ export interface VisualizerNode {
     login: string;
     avatarUrl?: string;
   };
+  fileTree?: VisualizerNode;
 }

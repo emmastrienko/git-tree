@@ -150,6 +150,58 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     return hash % 2 === 0 ? 1 : -1;
   };
 
+  const drawFileGarden = useCallback((
+    ctx: CanvasRenderingContext2D,
+    node: VisualizerNode,
+    len: number,
+    depth: number,
+    time: number,
+    progress: number
+  ) => {
+    if (!node || depth > 6) return;
+    const currentLen = len * progress;
+    
+    ctx.save();
+    // Gentle swaying
+    ctx.rotate(Math.sin(time * 0.001 + depth * 0.5) * (0.02 * depth));
+    
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(Math.sin(time * 0.0005 + depth) * 5, -currentLen/2, 0, -currentLen);
+    ctx.strokeStyle = `hsla(215, 20%, ${40 + depth * 8}%, ${0.8 - depth * 0.1})`;
+    ctx.lineWidth = Math.max(0.5, 6 - depth * 1);
+    ctx.stroke();
+    
+    ctx.translate(0, -currentLen);
+
+    if (node.type === 'file') {
+      const size = (Math.log10((node.metadata?.additions || 0) + 1) * 4 + 2) * progress;
+      ctx.beginPath();
+      ctx.arc(0, 0, size, 0, Math.PI * 2);
+      ctx.fillStyle = '#60a5fa';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#60a5fa';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // File Label
+      ctx.save();
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '8px monospace';
+      ctx.fillText(node.name, size + 4, 3);
+      ctx.restore();
+    }
+
+    node.children?.forEach((child, i) => {
+      ctx.save();
+      const angle = node.children.length === 1 ? 0.3 : ((i / (node.children.length - 1)) - 0.5) * 1.2;
+      ctx.rotate(angle);
+      drawFileGarden(ctx, child, len * 0.75, depth + 1, time, progress);
+      ctx.restore();
+    });
+    ctx.restore();
+  }, []);
+
   const drawNode = useCallback((
     ctx: CanvasRenderingContext2D,
     node: VisualizerNode,
@@ -181,9 +233,16 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     // Dim effect - ONLY IF explicitly requested via isDimmed (from Sidebar)
     if (isOtherHovered && isDimmed) ctx.globalAlpha = 0.1;
 
-    // Dynamic Blue Scale
+    // Color selection: Priority = PR Status > Conflicts > Activity Gradient
     let color = '#3b82f6'; 
-    if (node.hasConflicts) {
+    const isPR = node.metadata?.prNumber;
+
+    if (isPR) {
+      const status = node.metadata.status;
+      if (status === 'APPROVED') color = '#22c55e'; // Success Green
+      else if (status === 'CHANGES_REQUESTED') color = '#f43f5e'; // Error Rose
+      else color = '#eab308'; // Pending Yellow
+    } else if (node.hasConflicts) {
       color = '#f43f5e';
     } else if (node.lastUpdated && rootMetadata?.newestTimestamp) {
       const current = new Date(node.lastUpdated).getTime();
@@ -273,6 +332,14 @@ export const Visualizer: React.FC<VisualizerProps> = ({
 
         const matrix = ctx.getTransform();
         interactableRegions.current.push({ x: matrix.e, y: matrix.f, radius: dotRadius, node });
+
+        // Draw File Garden if data exists
+        if (node.fileTree && (isHovered || node.type !== 'trunk')) {
+          ctx.save();
+          // We are already at the branch tip
+          drawFileGarden(ctx, node.fileTree, 40, 0, time, 1);
+          ctx.restore();
+        }
 
         ctx.save();
         ctx.rotate(-currentAngle);

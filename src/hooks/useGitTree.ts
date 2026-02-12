@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { githubService } from '@/services/github';
-import { parseBranchTree } from '@/utils/tree-parser';
-import { GitBranch, ViewMode, VisualizerNode } from '@/types';
+import { parseBranchTree, parseFileTree } from '@/utils/tree-parser';
+import { GitBranch, ViewMode, VisualizerNode, GitPullRequest } from '@/types';
 
 const CACHE_PREFIX = 'git_viz_';
 
@@ -41,7 +41,8 @@ export const useGitTree = () => {
   }, []);
 
   const fetchNodeDetails = useCallback(async (repoUrl: string, node: VisualizerNode) => {
-    if (node.additions !== undefined || node.type === 'trunk' || fetchingNodes.current.has(node.name)) return;
+    // Only fetch if we don't have fileTree data and it's not the trunk
+    if (node.fileTree || node.type === 'trunk' || fetchingNodes.current.has(node.name)) return;
     
     fetchingNodes.current.add(node.name);
     const [owner, repo] = repoUrl.split('/');
@@ -49,7 +50,13 @@ export const useGitTree = () => {
     
     try {
       const baseBranch = tree?.name || 'main';
-      const comp = await githubService.compare(owner, repo, baseBranch, node.name);
+      const prNumber = node.metadata?.prNumber;
+
+      const [comp, prFiles] = await Promise.all([
+        githubService.compare(owner, repo, baseBranch, node.name),
+        prNumber ? githubService.getPullRequestFiles(owner, repo, prNumber) : Promise.resolve(null)
+      ]);
+
       const latestCommit = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
       
       const details = {
@@ -60,7 +67,8 @@ export const useGitTree = () => {
         author: latestCommit ? {
           login: latestCommit.author?.login || latestCommit.commit.author.name,
           avatarUrl: latestCommit.author?.avatar_url
-        } : undefined
+        } : undefined,
+        fileTree: prFiles ? parseFileTree(prFiles) : undefined
       };
 
       let newItems: any[] = [];
@@ -68,7 +76,10 @@ export const useGitTree = () => {
 
       // Update local items list
       setItems(prev => {
-        newItems = prev.map(item => item.name === node.name ? { ...item, ...details } : item);
+        newItems = prev.map(item => {
+          const itemKey = item.name || item.head?.ref;
+          return itemKey === node.name ? { ...item, ...details } : item;
+        });
         return newItems;
       });
       
@@ -76,16 +87,23 @@ export const useGitTree = () => {
       setTree(prev => {
         if (!prev) return null;
         const updateNodeDeep = (curr: VisualizerNode): VisualizerNode => {
-          if (curr.name === node.name) return { ...curr, ...details };
-          if (curr.children && curr.children.length > 0) return { ...curr, children: curr.children.map(updateNodeDeep) };
+          if (curr.name === node.name) {
+            return { 
+              ...curr, 
+              ...details,
+              metadata: { ...curr.metadata, ...details.fileTree?.metadata }
+            };
+          }
+          if (curr.children) {
+            return { ...curr, children: curr.children.map(updateNodeDeep) };
+          }
           return curr;
         };
         newTree = updateNodeDeep(prev);
-        return newTree;
+        return { ...newTree };
       });
 
-      // Update Session Cache with the new enriched data
-      // We wait a tick to ensure newItems/newTree are populated from the state updates above
+      // Update Session Cache
       setTimeout(() => {
         if (newItems.length > 0 && newTree) {
           const mode = sessionStorage.getItem('last_view_mode') || 'branches';
@@ -132,7 +150,6 @@ export const useGitTree = () => {
         const branchList = await githubService.getBranches(owner, repo);
         const comparedBranches: GitBranch[] = [];
 
-        // Chunk size increased to 50 for fewer, larger updates
         for (let i = 0; i < branchList.length; i += 50) {
           const chunk = branchList.slice(i, i + 50);
           const results = await Promise.all(chunk.map(async (b): Promise<GitBranch | null> => {
@@ -170,15 +187,68 @@ export const useGitTree = () => {
           
           setItems([...comparedBranches]);
           setTree(currentTree);
-          
-          // Save partial data to cache for resilience
           setCache(cacheKey, { items: [...comparedBranches], tree: currentTree });
-
           if (i === 0) animate();
         }
       } else {
-        setItems(openPRs);
-        setCache(cacheKey, { items: openPRs, tree: null });
+        // PULL REQUESTS MODE
+        const comparedPRs: any[] = [];
+
+        for (let i = 0; i < openPRs.length; i += 15) {
+          const chunk = openPRs.slice(i, i + 15);
+          const results = await Promise.all(chunk.map(async (pr): Promise<any | null> => {
+            try {
+              const [comp, reviews] = await Promise.all([
+                githubService.compare(owner, repo, base, pr.head.ref),
+                githubService.getPullRequestReviews(owner, repo, pr.number)
+              ]);
+
+              const latestReview = reviews.length > 0 ? reviews[reviews.length - 1].state : 'PENDING';
+              const latestCommit = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
+
+              return {
+                ...pr,
+                ahead: comp.ahead_by,
+                behind: comp.behind_by,
+                review_status: latestReview,
+                lastUpdated: latestCommit?.commit.author.date,
+                author: latestCommit ? {
+                  login: latestCommit.author?.login || latestCommit.commit.author.name,
+                  avatarUrl: latestCommit.author?.avatar_url
+                } : {
+                  login: pr.user.login,
+                  avatarUrl: pr.user.avatar_url
+                }
+              };
+            } catch { return null; }
+          }));
+
+          const valid = results.filter(res => res !== null);
+          comparedPRs.push(...valid);
+
+          const prBranches: GitBranch[] = comparedPRs.map(pr => ({
+            name: pr.head.ref, 
+            sha: pr.head.sha,
+            ahead: pr.ahead,
+            behind: pr.behind,
+            lastUpdated: pr.lastUpdated,
+            author: pr.author,
+            mergeBaseSha: pr.base.ref === base ? undefined : pr.base.ref, 
+            metadata: { 
+              prNumber: pr.number, 
+              status: pr.review_status,
+              displayTitle: pr.title || 'Untitled PR',
+              isDraft: pr.draft,
+              baseBranch: pr.base.ref
+            }
+          } as any));
+
+          const currentTree = parseBranchTree(prBranches, base);
+          setItems([...comparedPRs]);
+          setTree(currentTree);
+          setCache(cacheKey, { items: [...comparedPRs], tree: currentTree });
+          if (i === 0) animate();
+        }
       }
     } catch (err: any) {
       if (err.message?.includes('403')) setError('RATE_LIMIT');

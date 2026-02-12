@@ -76,6 +76,65 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     const disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
     let isDisposed = false;
 
+    // --- File Garden Generation ---
+    const buildFileGarden = (node: VisualizerNode, depth = 0): THREE.Group => {
+      const group = new THREE.Group();
+      const length = 100 * Math.pow(0.8, depth);
+      const radius = Math.max(0.5, 4 - depth * 0.8);
+
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(10, length * 0.5, 0),
+        new THREE.Vector3(0, length, 0)
+      );
+      
+      const geo = new THREE.TubeGeometry(curve, 8, radius, 6, false);
+      const mat = new THREE.MeshStandardMaterial({ 
+        color: `hsl(215, 20%, ${40 + depth * 10}%)`, 
+        transparent: true,
+        opacity: 0.8
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+      disposables.push(geo, mat);
+
+      if (node.type === 'file') {
+        const size = Math.log10((node.metadata?.additions || 0) + 1) * 5 + 3;
+        const leafGeo = new THREE.SphereGeometry(size, 8, 8);
+        const leafMat = new THREE.MeshStandardMaterial({ color: '#60a5fa', emissive: '#60a5fa', emissiveIntensity: 0.2 });
+        const leaf = new THREE.Mesh(leafGeo, leafMat);
+        leaf.position.set(0, length, 0);
+        group.add(leaf);
+        disposables.push(leafGeo, leafMat);
+
+        // File Label
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        canvas.width = 256; canvas.height = 64; 
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 24px monospace';
+        ctx.fillText(node.name, 10, 40);
+        
+        const tex = new THREE.CanvasTexture(canvas);
+        const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.6 });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.position.set(size + 20, length, 0);
+        sprite.scale.set(100, 25, 1);
+        group.add(sprite);
+        disposables.push(tex, spriteMat);
+      }
+
+      node.children?.forEach((child, i) => {
+        const childBranch = buildFileGarden(child, depth + 1);
+        childBranch.position.set(0, length, 0);
+        const angle = node.children.length === 1 ? 0.3 : ((i / (node.children.length - 1)) - 0.5) * 1.5;
+        childBranch.rotation.z = angle;
+        group.add(childBranch);
+      });
+
+      return group;
+    };
+
     // --- Tree Generation ---
     const buildBranch = (node: VisualizerNode, depth = 0, rootMeta: any = null): THREE.Group => {
       const isTrunk = node.type === 'trunk';
@@ -102,7 +161,15 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       let emissiveIntensity = isHovered ? 0.8 : 0.05;
 
       const meta = rootMeta || tree.metadata;
-      if (node.hasConflicts) {
+      const isPR = node.metadata?.prNumber;
+
+      if (isPR) {
+        const status = node.metadata.status;
+        if (status === 'APPROVED') branchColor = '#22c55e'; // Success Green
+        else if (status === 'CHANGES_REQUESTED') branchColor = '#f43f5e'; // Error Rose
+        else branchColor = '#eab308'; // Pending Yellow
+        if (!isHovered) emissiveIntensity = 0.3; // Slight glow for all PRs
+      } else if (node.hasConflicts) {
         branchColor = THEME.conflict;
       } else if (node.lastUpdated && meta?.newestTimestamp) {
         const current = new Date(node.lastUpdated).getTime();
@@ -151,6 +218,13 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         tip.userData = { node };
         group.add(tip);
         disposables.push(tipGeo, tipMat);
+
+        // Add File Garden if data exists
+        if (node.fileTree) {
+          const fileGarden = buildFileGarden(node.fileTree);
+          fileGarden.position.set(0, length, 0);
+          group.add(fileGarden);
+        }
 
         const shouldShowLabel = isHovered || (!isDimmed && depth <= 2);
         
