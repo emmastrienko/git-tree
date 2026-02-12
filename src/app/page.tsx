@@ -11,6 +11,7 @@ import { ViewToggle } from '@/components/ui/ViewToggle';
 import { SyncStatus } from '@/components/ui/SyncStatus';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { NodeTooltip } from '@/components/ui/NodeTooltip';
+import { Legend } from '@/components/ui/Legend';
 import { useGitTree } from '@/hooks/useGitTree';
 import { ViewMode, VisualizerNode } from '@/types';
 
@@ -146,6 +147,7 @@ export default function Home() {
     >
       <div className="w-full h-full relative group">
         <ViewToggle is3D={is3D} onToggle={setIs3D} />
+        <Legend />
 
         {loading && tree && <SyncStatus itemCount={items.length} />}
 
