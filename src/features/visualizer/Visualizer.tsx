@@ -8,7 +8,8 @@ interface VisualizerProps {
   growth?: number;
   isFetching?: boolean;
   hoveredNodeName?: string | null;
-  isDimmed?: boolean; // New prop to control background dimming
+  filterAuthor?: string | null;
+  isDimmed?: boolean;
   onHover?: (name: string | null) => void;
   onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
 }
@@ -25,6 +26,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
   growth = 1, 
   isFetching, 
   hoveredNodeName,
+  filterAuthor,
   isDimmed,
   onHover,
   onSelect 
@@ -160,20 +162,15 @@ export const Visualizer: React.FC<VisualizerProps> = ({
   ) => {
     if (!node || depth > 6) return;
     const currentLen = len * progress;
-    
     ctx.save();
-    // Gentle swaying
     ctx.rotate(Math.sin(time * 0.001 + depth * 0.5) * (0.02 * depth));
-    
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.quadraticCurveTo(Math.sin(time * 0.0005 + depth) * 5, -currentLen/2, 0, -currentLen);
     ctx.strokeStyle = `hsla(215, 20%, ${40 + depth * 8}%, ${0.8 - depth * 0.1})`;
     ctx.lineWidth = Math.max(0.5, 6 - depth * 1);
     ctx.stroke();
-    
     ctx.translate(0, -currentLen);
-
     if (node.type === 'file') {
       const size = (Math.log10((node.metadata?.additions || 0) + 1) * 4 + 2) * progress;
       ctx.beginPath();
@@ -183,15 +180,12 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       ctx.shadowColor = '#60a5fa';
       ctx.fill();
       ctx.shadowBlur = 0;
-
-      // File Label
       ctx.save();
       ctx.fillStyle = '#94a3b8';
       ctx.font = '8px monospace';
       ctx.fillText(node.name, size + 4, 3);
       ctx.restore();
     }
-
     node.children?.forEach((child, i) => {
       ctx.save();
       const angle = node.children.length === 1 ? 0.3 : ((i / (node.children.length - 1)) - 0.5) * 1.2;
@@ -220,8 +214,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       : 1;
 
     const isTrunk = node.type === 'trunk';
-    const isHovered = hoveredNodeName === node.name;
-    const isOtherHovered = hoveredNodeName && !isHovered;
+    const isHighlighted = hoveredNodeName === node.name || (filterAuthor && node.author?.login === filterAuthor);
+    const isOtherHighlighted = (hoveredNodeName && hoveredNodeName !== node.name) || (filterAuthor && node.author?.login !== filterAuthor);
     const val = node.relativeAhead ?? node.ahead;
     
     const length = isTrunk 
@@ -230,8 +224,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({
 
     ctx.save();
 
-    // Dim effect - ONLY IF explicitly requested via isDimmed (from Sidebar)
-    if (isOtherHovered && isDimmed) ctx.globalAlpha = 0.1;
+    // Dim effect
+    if (isOtherHighlighted && isDimmed) ctx.globalAlpha = 0.1;
 
     // Color selection: Priority = PR Status > Conflicts > Activity Gradient
     let color = '#3b82f6'; 
@@ -260,7 +254,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
 
     if (node.isMerged) {
       color = '#1e293b';
-      if (!isOtherHovered) ctx.globalAlpha = isHovered ? 0.6 : 0.25;
+      if (!isOtherHighlighted) ctx.globalAlpha = isHighlighted ? 0.6 : 0.25;
     }
 
     const trunkWidth = 18;
@@ -274,7 +268,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       ctx.quadraticCurveTo(cp1x, cp1y, 0, -length);
     }
 
-    if (isHovered) {
+    if (isHighlighted) {
       ctx.shadowBlur = 25;
       ctx.shadowColor = '#fff';
       ctx.lineWidth = isTrunk ? trunkWidth + 4 : Math.max(6, 14 - depth * 2.5);
@@ -287,13 +281,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     ctx.lineCap = 'round';
     ctx.stroke();
     ctx.shadowBlur = 0;
-
-    if (isTrunk && isFetching) {
-      const breathe = (Math.sin(time * 0.003) + 1) / 2;
-      ctx.strokeStyle = `rgba(99, 102, 241, ${0.1 + breathe * 0.3})`;
-      ctx.lineWidth = trunkWidth + 10;
-      ctx.stroke();
-    }
 
     if (isTrunk) {
       const branches = tree.children || [];
@@ -312,17 +299,17 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       });
     } else {
       ctx.translate(0, -length);
-      const dotRadius = isHovered ? 10 : 6;
+      const dotRadius = isHighlighted ? 10 : 6;
       if (nodeArrivalProgress > 0.8) {
         ctx.beginPath();
         ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
         ctx.fillStyle = color;
-        if (isHovered) {
+        if (isHighlighted) {
           ctx.shadowBlur = 30;
           ctx.shadowColor = '#fff';
           ctx.globalAlpha = 1;
         } else if (node.lastUpdated && (new Date().getTime() - new Date(node.lastUpdated).getTime()) < 1000 * 60 * 60 * 24) {
-          if (!isOtherHovered || !isDimmed) {
+          if (!isOtherHighlighted || !isDimmed) {
             ctx.shadowBlur = 20;
             ctx.shadowColor = '#818cf8';
           }
@@ -333,25 +320,23 @@ export const Visualizer: React.FC<VisualizerProps> = ({
         const matrix = ctx.getTransform();
         interactableRegions.current.push({ x: matrix.e, y: matrix.f, radius: dotRadius, node });
 
-        // Draw File Garden if data exists
-        if (node.fileTree && (isHovered || node.type !== 'trunk')) {
+        if (node.fileTree && (isHighlighted || node.type !== 'trunk')) {
           ctx.save();
-          // We are already at the branch tip
           drawFileGarden(ctx, node.fileTree, 40, 0, time, 1);
           ctx.restore();
         }
 
         ctx.save();
         ctx.rotate(-currentAngle);
-        ctx.fillStyle = isHovered ? '#fff' : (node.isMerged ? '#475569' : '#f1f5f9');
-        ctx.font = isHovered ? 'bold 12px monospace' : 'bold 10px monospace';
+        ctx.fillStyle = isHighlighted ? '#fff' : (node.isMerged ? '#475569' : '#f1f5f9');
+        ctx.font = isHighlighted ? 'bold 12px monospace' : 'bold 10px monospace';
         
-        if (isOtherHovered && isDimmed) ctx.globalAlpha = 0;
-        else ctx.globalAlpha = isHovered ? 1 : (nodeArrivalProgress - 0.8) * 5;
+        if (isOtherHighlighted && isDimmed) ctx.globalAlpha = 0;
+        else ctx.globalAlpha = isHighlighted ? 1 : (nodeArrivalProgress - 0.8) * 5;
 
         const side = getSide(node.name);
         ctx.textAlign = side > 0 ? 'left' : 'right';
-        ctx.fillText(node.name, side * (isHovered ? 18 : 14), (index % 2 === 0 ? -4 : 8));
+        ctx.fillText(node.name, side * (isHighlighted ? 18 : 14), (index % 2 === 0 ? -4 : 8));
         ctx.restore();
       }
 
@@ -365,7 +350,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       });
     }
     ctx.restore();
-  }, [isFetching, tree.children, hoveredNodeName, isDimmed]);
+  }, [isFetching, tree.children, hoveredNodeName, isDimmed, filterAuthor, drawFileGarden]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

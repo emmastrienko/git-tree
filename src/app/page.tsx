@@ -21,16 +21,15 @@ export default function Home() {
   const [is3D, setIs3D] = useState(false);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
   const [hoveredNodeName, setHoveredNodeName] = useState<string | null>(null);
+  const [filterAuthor, setFilterAuthor] = useState<string | null>(null);
   const [isSidebarHover, setIsSidebarHover] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [treeKey, setTreeKey] = useState(0); 
   const { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
   const isInitialized = useRef(false);
 
-  // Derive selectedNode from tree and selectedNodeName
   const selectedNode = useMemo(() => {
     if (!tree || !selectedNodeName) return null;
-    
     const findNode = (curr: VisualizerNode): VisualizerNode | null => {
       if (curr.name === selectedNodeName) return curr;
       if (curr.children) {
@@ -44,25 +43,19 @@ export default function Home() {
     return findNode(tree);
   }, [tree, selectedNodeName]);
 
-  // Force re-render when tree content updates
   useEffect(() => {
     if (tree) setTreeKey(prev => prev + 1);
   }, [tree]);
 
-  // Initial Load only
   useEffect(() => {
     if (isInitialized.current) return;
-    
     const params = new URLSearchParams(window.location.search);
     const urlRepo = params.get('repo');
     const urlMode = params.get('mode') as ViewMode;
-    
     const lastRepo = sessionStorage.getItem('last_repo_url');
     const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
-
     const targetRepo = urlRepo || lastRepo;
     const targetMode = urlMode || lastMode || 'branches';
-
     if (targetRepo) {
       setRepoUrl(targetRepo);
       setViewMode(targetMode);
@@ -71,10 +64,8 @@ export default function Home() {
     }
   }, [fetchTree]);
 
-  // React to mode changes AFTER initialization
   useEffect(() => {
     if (!isInitialized.current) return;
-    
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') !== viewMode || params.get('repo') !== repoUrl) {
       params.set('repo', repoUrl);
@@ -88,18 +79,15 @@ export default function Home() {
   const handleFetch = useCallback(() => {
     setSelectedNodeName(null);
     setHoveredNodeName(null);
+    setFilterAuthor(null);
     setIsSidebarHover(false);
-    
     clearCache(repoUrl, viewMode);
-    
     sessionStorage.setItem('last_repo_url', repoUrl);
     sessionStorage.setItem('last_view_mode', viewMode);
-    
     const params = new URLSearchParams();
     params.set('repo', repoUrl);
     params.set('mode', viewMode);
     window.history.pushState(null, '', `?${params.toString()}`);
-    
     fetchTree(repoUrl, viewMode);
     isInitialized.current = true;
   }, [repoUrl, viewMode, clearCache, fetchTree]);
@@ -141,6 +129,8 @@ export default function Home() {
           items={items} 
           onHover={handleSidebarHover}
           onSelect={handleSidebarSelect}
+          filterAuthor={filterAuthor}
+          onFilterAuthor={setFilterAuthor}
         />
       }
       footer={<Footer />}
@@ -167,7 +157,8 @@ export default function Home() {
               key={`3d-${treeKey}`}
               tree={tree} 
               hoveredNodeName={hoveredNodeName}
-              isDimmed={isSidebarHover}
+              filterAuthor={filterAuthor}
+              isDimmed={isSidebarHover || !!filterAuthor}
               onHover={setHoveredNodeName}
               isFetching={loading} 
               onSelect={handleSelect}
@@ -177,7 +168,8 @@ export default function Home() {
               key={`2d-${treeKey}`}
               tree={tree} 
               hoveredNodeName={hoveredNodeName}
-              isDimmed={isSidebarHover}
+              filterAuthor={filterAuthor}
+              isDimmed={isSidebarHover || !!filterAuthor}
               onHover={setHoveredNodeName}
               growth={growth} 
               isFetching={loading} 

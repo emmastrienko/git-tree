@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X, ArrowUpDown } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X, ArrowUpDown, Filter, User } from 'lucide-react';
 import { GitBranch, GitPullRequest, ViewMode } from '@/types';
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   items: any[];
   onHover?: (name: string | null) => void;
   onSelect?: (name: string) => void;
+  filterAuthor?: string | null;
+  onFilterAuthor?: (login: string | null) => void;
 }
 
 type SortOption = 'recent' | 'name';
@@ -25,10 +27,29 @@ const formatShortDate = (dateStr?: string) => {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect }) => {
+export const Sidebar: React.FC<Props> = ({ 
+  viewMode, 
+  items, 
+  onHover, 
+  onSelect,
+  filterAuthor,
+  onFilterAuthor 
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('recent');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Extract unique authors for filtering
+  const authors = useMemo(() => {
+    const map = new Map<string, string>();
+    items.forEach(item => {
+      const author = item.author || (item.user ? { login: item.user.login, avatarUrl: item.user.avatar_url } : null);
+      if (author?.login) {
+        map.set(author.login, author.avatarUrl || '');
+      }
+    });
+    return Array.from(map.entries()).map(([login, avatarUrl]) => ({ login, avatarUrl }));
+  }, [items]);
 
   const handleSortChange = (option: SortOption) => {
     if (sortBy === option) {
@@ -39,25 +60,32 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
     }
   };
 
-  const sortedItems = [...items].sort((a, b) => {
-    let result = 0;
-    if (sortBy === 'recent') {
-      const timeA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
-      const timeB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
-      result = timeB - timeA;
-    } else {
-      const nameA = (viewMode === 'branches' ? (a as GitBranch).name : (a as GitPullRequest).title) || '';
-      const nameB = (viewMode === 'branches' ? (b as GitBranch).name : (b as GitPullRequest).title) || '';
-      result = nameA.localeCompare(nameB);
-    }
-    return sortDirection === 'asc' ? result : -result;
-  });
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      let result = 0;
+      if (sortBy === 'recent') {
+        const timeA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+        const timeB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+        result = timeB - timeA;
+      } else {
+        const nameA = (viewMode === 'branches' ? (a as GitBranch).name : (a as GitPullRequest).title) || '';
+        const nameB = (viewMode === 'branches' ? (b as GitBranch).name : (b as GitPullRequest).title) || '';
+        result = nameA.localeCompare(nameB);
+      }
+      return sortDirection === 'asc' ? result : -result;
+    });
+  }, [items, sortBy, sortDirection, viewMode]);
 
   const filteredItems = sortedItems.filter(item => {
+    const login = item.author?.login || item.user?.login;
+    const matchesAuthor = !filterAuthor || login === filterAuthor;
+    
     const name = (viewMode === 'branches' 
       ? (item as GitBranch).name 
       : (item as GitPullRequest).title) || '';
-    return name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return matchesAuthor && matchesSearch;
   });
 
   return (
@@ -68,11 +96,48 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
             {viewMode === 'branches' ? 'Branches' : 'Pull Requests'}
           </h2>
           <span className="text-[10px] font-mono text-slate-600">
-            {searchQuery ? `${filteredItems.length} / ${items.length}` : items.length}
+            {filteredItems.length} / {items.length}
           </span>
         </div>
 
-        {/* User-Friendly Sort Tabs */}
+        {/* Author Quick Filter */}
+        {authors.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-tighter">
+              <Filter size={10} /> Focus by Author
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {authors.slice(0, 8).map(author => (
+                <button
+                  key={author.login}
+                  onClick={() => onFilterAuthor?.(filterAuthor === author.login ? null : author.login)}
+                  className={`group relative flex items-center transition-all ${
+                    filterAuthor === author.login ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900 rounded-full' : 'opacity-60 hover:opacity-100'
+                  }`}
+                  title={author.login}
+                >
+                  {author.avatarUrl ? (
+                    <img src={author.avatarUrl} className="w-5 h-5 rounded-full border border-white/10" alt={author.login} />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center border border-white/5 text-[8px] text-slate-400">
+                      <User size={8} />
+                    </div>
+                  )}
+                </button>
+              ))}
+              {filterAuthor && (
+                <button 
+                  onClick={() => onFilterAuthor?.(null)}
+                  className="w-5 h-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-rose-500/20 transition-colors"
+                  title="Clear filter"
+                >
+                  <X size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex bg-black/20 p-0.5 rounded-md border border-white/5">
           {(['recent', 'name'] as SortOption[]).map((option) => (
             <button
@@ -85,14 +150,11 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
               }`}
             >
               {option === 'recent' ? (sortDirection === 'asc' ? 'Newest' : 'Oldest') : (sortDirection === 'asc' ? 'A-Z' : 'Z-A')}
-              {sortBy === option && (
-                <ArrowUpDown size={8} />
-              )}
+              {sortBy === option && <ArrowUpDown size={8} />}
             </button>
           ))}
         </div>
 
-        {/* Search Input */}
         <div className="relative group">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-indigo-500 transition-colors" size={13} />
           <input 
@@ -103,10 +165,7 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
             className="w-full bg-white/5 border border-white/5 rounded-md pl-8 pr-8 py-1.5 text-[11px] focus:outline-none focus:border-indigo-500/30 focus:bg-white/[0.07] transition-all text-slate-200"
           />
           {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-white/10 rounded-sm text-slate-500 hover:text-slate-300 transition-all"
-            >
+            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-white/10 rounded-sm text-slate-500 hover:text-slate-300 transition-all">
               <X size={12} />
             </button>
           )}
@@ -117,18 +176,18 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
         <div className="flex flex-col gap-0.5" onMouseLeave={() => onHover?.(null)}>
           {filteredItems.map((item, i) => {
             const b = item as any;
-            const name = viewMode === 'branches' 
-              ? b.name 
-              : (b.title || b.metadata?.displayTitle || 'Untitled PR');
-            
+            const name = viewMode === 'branches' ? b.name : (b.title || b.metadata?.displayTitle || 'Untitled PR');
             const hoverKey = viewMode === 'branches' ? b.name : (b.head?.ref || b.name);
+            const login = b.author?.login || b.user?.login;
 
             return (
               <button 
                 key={i} 
                 onMouseEnter={() => onHover?.(hoverKey)}
                 onClick={() => onSelect?.(hoverKey)}
-                className="w-full text-left px-3 py-2 rounded-md hover:bg-white/[0.03] active:bg-white/[0.06] group transition-all flex items-start gap-3"
+                className={`w-full text-left px-3 py-2 rounded-md transition-all flex items-start gap-3 group ${
+                  filterAuthor === login ? 'bg-indigo-500/10' : 'hover:bg-white/[0.03]'
+                }`}
               >
                 <div className="mt-1 text-slate-600 group-hover:text-indigo-400 transition-colors">
                   {viewMode === 'branches' ? <GitBranchIcon size={12} /> : <GitPRIcon size={12} />}
@@ -157,14 +216,14 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
                       </div>
                     )}
                     
-                    {b.author && (
+                    {login && (
                       <div className="flex items-center gap-1.5 ml-auto">
-                        <span className="text-[9px] text-slate-600 hidden group-hover:inline">{b.author.login}</span>
-                        {b.author.avatarUrl ? (
-                          <img src={b.author.avatarUrl} className="w-3.5 h-3.5 rounded-full border border-white/10" alt="" />
-                        ) : (
-                          <div className="w-3.5 h-3.5 rounded-full bg-white/5 border border-white/10" />
-                        )}
+                        <span className="text-[9px] text-slate-600 hidden group-hover:inline">{login}</span>
+                        <img 
+                          src={b.author?.avatarUrl || b.user?.avatar_url} 
+                          className={`w-3.5 h-3.5 rounded-full border ${filterAuthor === login ? 'border-indigo-500' : 'border-white/10'}`} 
+                          alt="" 
+                        />
                       </div>
                     )}
                   </div>
@@ -175,20 +234,10 @@ export const Sidebar: React.FC<Props> = ({ viewMode, items, onHover, onSelect })
           
           {items.length > 0 && filteredItems.length === 0 && (
             <div className="py-8 px-4 text-center">
-              <div className="text-[11px] text-slate-600 font-medium">No results for "{searchQuery}"</div>
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="text-[9px] text-indigo-400 mt-1 hover:underline"
-              >
-                Clear filter
+              <div className="text-[11px] text-slate-600 font-medium">No results found</div>
+              <button onClick={() => { setSearchQuery(''); onFilterAuthor?.(null); }} className="text-[9px] text-indigo-400 mt-1 hover:underline">
+                Clear all filters
               </button>
-            </div>
-          )}
-
-          {!items.length && (
-            <div className="py-8 px-4 text-center">
-              <div className="text-[11px] text-slate-600 font-medium">No active {viewMode === 'branches' ? 'branches' : 'pull requests'}</div>
-              <div className="text-[9px] text-slate-700 mt-1">Fetch a repository to see data</div>
             </div>
           )}
         </div>

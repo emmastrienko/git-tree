@@ -7,7 +7,7 @@ import { VisualizerNode } from '@/types';
 
 const THEME = {
   background: '#020617',
-  primary: '#6366f1',
+  primary: '#3b82f6',
   trunk: '#334155',
   conflict: '#f43f5e',
   text: '#f1f5f9',
@@ -27,6 +27,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
   tree, 
   onSelect, 
   hoveredNodeName, 
+  filterAuthor,
   onHover,
   isDimmed 
 }) => {
@@ -107,14 +108,12 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         group.add(leaf);
         disposables.push(leafGeo, leafMat);
 
-        // File Label
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
         canvas.width = 256; canvas.height = 64; 
         ctx.fillStyle = '#94a3b8';
         ctx.font = 'bold 24px monospace';
         ctx.fillText(node.name, 10, 40);
-        
         const tex = new THREE.CanvasTexture(canvas);
         const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.6 });
         const sprite = new THREE.Sprite(spriteMat);
@@ -138,13 +137,14 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     // --- Tree Generation ---
     const buildBranch = (node: VisualizerNode, depth = 0, rootMeta: any = null): THREE.Group => {
       const isTrunk = node.type === 'trunk';
-      const isHovered = hoveredNodeName === node.name;
-      const isOtherHovered = hoveredNodeName && !isHovered;
-      const val = node.relativeAhead ?? node.ahead;
       
+      const isHighlighted = hoveredNodeName === node.name || (filterAuthor && node.author?.login === filterAuthor);
+      const isOtherHighlighted = (hoveredNodeName && hoveredNodeName !== node.name) || (filterAuthor && node.author?.login !== filterAuthor);
+      
+      const val = node.relativeAhead ?? node.ahead;
       const length = isTrunk ? TREE_LAYOUT.trunkLength : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
       const radius = isTrunk ? TREE_LAYOUT.trunkRadius : Math.max(TREE_LAYOUT.minRadius, 10 - depth * 2.5);
-      const dotSize = isHovered ? 25 : 15; 
+      const dotSize = isHighlighted ? 25 : 15; 
 
       const group = new THREE.Group();
       if (!isTrunk) animatedGroups.push(group);
@@ -155,20 +155,20 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         new THREE.Vector3(0, length, 0)
       );
       
-      const geo = new THREE.TubeGeometry(curve, 8, isHovered ? radius + 4 : radius, 6, false);
+      const geo = new THREE.TubeGeometry(curve, 8, isHighlighted ? radius + 4 : radius, 6, false);
       
       let branchColor = isTrunk ? THEME.trunk : THEME.primary;
-      let emissiveIntensity = isHovered ? 0.8 : 0.05;
+      let emissiveIntensity = isHighlighted ? 0.8 : 0.05;
 
       const meta = rootMeta || tree.metadata;
       const isPR = node.metadata?.prNumber;
 
       if (isPR) {
         const status = node.metadata.status;
-        if (status === 'APPROVED') branchColor = '#22c55e'; // Success Green
-        else if (status === 'CHANGES_REQUESTED') branchColor = '#f43f5e'; // Error Rose
-        else branchColor = '#eab308'; // Pending Yellow
-        if (!isHovered) emissiveIntensity = 0.3; // Slight glow for all PRs
+        if (status === 'APPROVED') branchColor = '#22c55e';
+        else if (status === 'CHANGES_REQUESTED') branchColor = '#f43f5e';
+        else branchColor = '#eab308';
+        if (!isHighlighted) emissiveIntensity = 0.3;
       } else if (node.hasConflicts) {
         branchColor = THEME.conflict;
       } else if (node.lastUpdated && meta?.newestTimestamp) {
@@ -180,7 +180,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         
         if (ratio > 0.8) {
           branchColor = '#60a5fa'; 
-          if (!isHovered) emissiveIntensity = 0.5;
+          if (!isHighlighted) emissiveIntensity = 0.5;
         } 
         else if (ratio > 0.6) branchColor = '#3b82f6';
         else if (ratio > 0.4) branchColor = '#2563eb';
@@ -188,13 +188,13 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         else branchColor = '#172554';
       }
 
-      if (isHovered) branchColor = '#ffffff';
-      if (node.isMerged && !isHovered) branchColor = '#1e293b';
+      if (isHighlighted) branchColor = '#ffffff';
+      if (node.isMerged && !isHighlighted) branchColor = '#1e293b';
 
       const mat = new THREE.MeshStandardMaterial({ 
         color: branchColor, 
         transparent: true, 
-        opacity: (isOtherHovered && isDimmed) ? 0.05 : (node.isMerged && !isHovered ? 0.3 : 1),
+        opacity: (isOtherHighlighted && isDimmed) ? 0.05 : (node.isMerged && !isHighlighted ? 0.3 : 1),
         roughness: 0.5,
         metalness: 0.1
       });
@@ -209,9 +209,9 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         const tipMat = new THREE.MeshStandardMaterial({ 
           color: branchColor, 
           emissive: branchColor, 
-          emissiveIntensity: (isOtherHovered && isDimmed) ? 0 : emissiveIntensity,
+          emissiveIntensity: (isOtherHighlighted && isDimmed) ? 0 : emissiveIntensity,
           transparent: true,
-          opacity: (isOtherHovered && isDimmed) ? 0.05 : 1
+          opacity: (isOtherHighlighted && isDimmed) ? 0.05 : 1
         });
         const tip = new THREE.Mesh(tipGeo, tipMat);
         tip.position.set(0, length, 0);
@@ -219,36 +219,34 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         group.add(tip);
         disposables.push(tipGeo, tipMat);
 
-        // Add File Garden if data exists
         if (node.fileTree) {
           const fileGarden = buildFileGarden(node.fileTree);
           fileGarden.position.set(0, length, 0);
           group.add(fileGarden);
         }
 
-        const shouldShowLabel = isHovered || (!isDimmed && depth <= 2);
+        const shouldShowLabel = isHighlighted || (!isDimmed && depth <= 2);
         
         if (shouldShowLabel) {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d')!;
           canvas.width = 256; canvas.height = 64; 
-          ctx.fillStyle = isHovered ? '#ffffff' : THEME.text;
-          ctx.font = `bold ${isHovered ? 32 : Math.max(24, 40 - depth * 6)}px monospace`;
+          ctx.fillStyle = isHighlighted ? '#ffffff' : THEME.text;
+          ctx.font = `bold ${isHighlighted ? 32 : Math.max(24, 40 - depth * 6)}px monospace`;
           ctx.textAlign = 'center';
           ctx.fillText(node.name, 128, 32);
-          
           const tex = new THREE.CanvasTexture(canvas);
           const spriteMat = new THREE.SpriteMaterial({ 
             map: tex, 
             transparent: true, 
-            depthTest: !isHovered,
-            opacity: isHovered ? 1 : 0.8
+            depthTest: !isHighlighted,
+            opacity: isHighlighted ? 1 : 0.8
           });
           const sprite = new THREE.Sprite(spriteMat);
-          const scale = isHovered ? 300 : Math.max(120, 200 - depth * 40);
+          const scale = isHighlighted ? 300 : Math.max(120, 200 - depth * 40);
           sprite.position.set(0, length + 25, 0);
           sprite.scale.set(scale, scale / 4, 1);
-          sprite.renderOrder = isHovered ? 999 : 0;
+          sprite.renderOrder = isHighlighted ? 999 : 0;
           group.add(sprite);
           disposables.push(tex, spriteMat);
         }
@@ -351,7 +349,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
-  }, [tree, onSelect, hoveredNodeName, isDimmed]);
+  }, [tree, onSelect, hoveredNodeName, isDimmed, filterAuthor]);
 
   return <div ref={containerRef} className="w-full h-full overflow-hidden touch-none" />;
 };
@@ -360,6 +358,7 @@ interface ThreeVisualizerProps {
   tree: VisualizerNode;
   isFetching?: boolean;
   hoveredNodeName?: string | null;
+  filterAuthor?: string | null;
   isDimmed?: boolean;
   onHover?: (name: string | null) => void;
   onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
