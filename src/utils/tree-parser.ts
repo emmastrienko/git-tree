@@ -20,11 +20,16 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     .map(b => b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0)
     .filter(t => t > 0);
     
+  // We make the bounds 'sticky' by checking if we already had extreme values in the trunk metadata
+  const prevMeta = trunk.metadata || {};
+  const currentNewest = timestamps.length ? Math.max(...timestamps) : Date.now();
+  const currentOldest = timestamps.length ? Math.min(...timestamps) : Date.now() - (30 * 24 * 60 * 60 * 1000);
+
   trunk.metadata = {
     maxBehind: Math.max(...branches.map(b => b.behind), 1),
     maxAhead: Math.max(...branches.map(b => b.ahead), 1),
-    newestTimestamp: timestamps.length ? Math.max(...timestamps) : Date.now(),
-    oldestTimestamp: timestamps.length ? Math.min(...timestamps) : Date.now() - (30 * 24 * 60 * 60 * 1000)
+    newestTimestamp: prevMeta.newestTimestamp ? Math.max(prevMeta.newestTimestamp, currentNewest) : currentNewest,
+    oldestTimestamp: prevMeta.oldestTimestamp ? Math.min(prevMeta.oldestTimestamp, currentOldest) : currentOldest
   };
 
   branches.forEach(b => {
@@ -39,8 +44,6 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
       if (p.name === b.name || p.isBase) continue;
 
       const isAncestor = bHistory.has(p.sha) || 
-                        (b.mergeBaseSha === p.mergeBaseSha && b.ahead > p.ahead) ||
-                        (b.behind === p.behind && b.ahead > p.ahead) ||
                         (b.metadata?.baseBranch === p.name); // Match PR to its target branch
 
       if (isAncestor && p.ahead > maxScore) {

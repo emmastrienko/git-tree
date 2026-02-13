@@ -44,8 +44,8 @@ describe('tree-parser (Comprehensive)', () => {
       expect(tree.children[0].name).toBe('feature');
     });
 
-    it('should nest based on ahead/behind heuristic when history is missing', () => {
-      // Scenario: history array is empty, but counts show dependency
+    it('should NOT nest siblings under each other when history is missing', () => {
+      // Scenario: history array is empty, counts show they might be related but they are actually siblings
       const branches: GitBranch[] = [
         { name: 'main', sha: 'sha1', ahead: 0, behind: 0, isBase: true },
         { name: 'feature-a', sha: 'sha2', ahead: 10, behind: 0, history: [] },
@@ -53,10 +53,13 @@ describe('tree-parser (Comprehensive)', () => {
       ];
       const tree = parseBranchTree(branches, defaultBranch);
       const a = tree.children.find(c => c.name === 'feature-a');
-      const b = a?.children.find(c => c.name === 'feature-b');
+      const b = tree.children.find(c => c.name === 'feature-b');
 
+      expect(a).toBeDefined();
       expect(b).toBeDefined();
-      expect(b?.relativeAhead).toBe(5); // 15 - 10
+      expect(a?.children.find(c => c.name === 'feature-b')).toBeUndefined();
+      expect(tree.children).toContain(a);
+      expect(tree.children).toContain(b);
     });
 
     it('should handle empty branch list gracefully', () => {

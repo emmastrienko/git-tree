@@ -177,7 +177,7 @@ export const Sidebar: React.FC<Props> = ({
           {filteredItems.map((item, i) => {
             const b = item as any;
             const name = viewMode === 'branches' ? b.name : (b.title || b.metadata?.displayTitle || 'Untitled PR');
-            const hoverKey = viewMode === 'branches' ? b.name : (b.head?.ref || b.name);
+            const hoverKey = viewMode === 'branches' ? b.name : `${b.head?.ref} #${b.number}`;
             const login = b.author?.login || b.user?.login;
 
             return (

@@ -34,8 +34,23 @@ export const githubService = {
     return all;
   },
 
-  getPullRequests: (owner: string, repo: string) => 
-    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=50`),
+  getPullRequests: async (owner: string, repo: string) => {
+    let all: any[] = [];
+    let page = 1;
+    const MAX_PAGES = 5; // Up to 500 PRs
+    
+    while (page <= MAX_PAGES) {
+      const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=100&page=${page}`;
+      const pageData = await fetcher<any[]>(url);
+      
+      if (!pageData || pageData.length === 0) break;
+      
+      all = [...all, ...pageData];
+      if (pageData.length < 100) break;
+      page++;
+    }
+    return all;
+  },
 
   getPullRequestReviews: (owner: string, repo: string, pullNumber: number) =>
     fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`),
@@ -44,7 +59,7 @@ export const githubService = {
     fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`),
 
   compare: (owner: string, repo: string, base: string, head: string) => {
-    // Double-encoding is often required for branch names with slashes in the Compare API
+    // Slashes in branch names must be encoded for the Compare API
     const encodedBase = encodeURIComponent(base);
     const encodedHead = encodeURIComponent(head);
     return fetcher<any>(`/api/github/repos/${owner}/${repo}/compare/${encodedBase}...${encodedHead}`);

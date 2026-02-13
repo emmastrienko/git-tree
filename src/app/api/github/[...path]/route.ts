@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import https from 'https';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  const query = req.nextUrl.searchParams.toString();
-  const endpoint = `/${path.join('/')}${query ? `?${query}` : ''}`;
+  const urlString = req.url;
+  const apiUrlPart = '/api/github';
+  const apiIndex = urlString.indexOf(apiUrlPart);
+  const endpoint = urlString.substring(apiIndex + apiUrlPart.length);
+  console.log(`[Proxy] Forwarding to GitHub: ${endpoint}`);
   
   const options: https.RequestOptions = {
     hostname: 'api.github.com',
