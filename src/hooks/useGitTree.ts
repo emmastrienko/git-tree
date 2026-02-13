@@ -5,27 +5,83 @@ import { GitBranch, ViewMode, VisualizerNode, GitPullRequest } from '@/types';
 
 const CACHE_PREFIX = 'git_viz_';
 
-const getCache = (key: string) => {
-  if (typeof window === 'undefined') return null;
-  const data = sessionStorage.getItem(CACHE_PREFIX + key);
-  return data ? JSON.parse(data) : null;
+const pruneCache = () => {
+  try {
+    const keys = Object.keys(sessionStorage).filter(k => k.startsWith(CACHE_PREFIX));
+    keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => sessionStorage.removeItem(k));
+  } catch (e) {
+    sessionStorage.clear();
+  }
 };
 
 const setCache = (key: string, value: any) => {
   if (typeof window === 'undefined') return;
-  sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value));
+  
+  const minimizedValue = {
+    ...value,
+    items: value.items.map((item: any) => ({
+      id: item.id,
+      number: item.number,
+      title: item.title,
+      name: item.name,
+      state: item.state,
+      draft: item.draft,
+      html_url: item.html_url,
+      ahead: item.ahead,
+      behind: item.behind,
+      review_status: item.review_status,
+      lastUpdated: item.lastUpdated,
+      author: item.author,
+      user: item.user ? { login: item.user.login, avatar_url: item.user.avatar_url } : undefined,
+      head: item.head ? { ref: item.head.ref, sha: item.head.sha } : undefined
+    }))
+  };
+
+  try {
+    sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
+  } catch (e) {
+    if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+      pruneCache();
+      try {
+        sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
+      } catch {
+        console.error('[Cache] Failed to save even after pruning.');
+      }
+    }
+  }
+};
+
+const getCache = (key: string) => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const data = sessionStorage.getItem(CACHE_PREFIX + key);
+    return data ? JSON.parse(data) : null;
+  } catch { return null; }
 };
 
 export const useGitTree = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tree, setTree] = useState<VisualizerNode | null>(null);
-  const [items, setItems] = useState<any[]>([]);
   const [growth, setGrowth] = useState(0);
+  
+  const [branchData, setBranchData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
+  const [prData, setPrData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
+  
   const frameRef = useRef<number>(0);
   const fetchingNodes = useRef<Set<string>>(new Set());
   const lastFetchId = useRef<number>(0);
   const currentModeRef = useRef<ViewMode>('branches');
+  const [activeMode, setActiveMode] = useState<ViewMode>('branches');
+  
+  // High-fidelity tracking of what's in state
+  const stateTracker = useRef<{
+    repo: string | null,
+    hasBranches: boolean,
+    hasPrs: boolean
+  }>({ repo: null, hasBranches: false, hasPrs: false });
+
+  const tree = activeMode === 'branches' ? branchData.tree : prData.tree;
+  const items = activeMode === 'branches' ? branchData.items : prData.items;
 
   const animate = useCallback(() => {
     setGrowth(prev => {
@@ -40,10 +96,12 @@ export const useGitTree = () => {
   const clearCache = useCallback((repoUrl: string, mode: ViewMode) => {
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
     sessionStorage.removeItem(CACHE_PREFIX + `${cleanPath}/${mode}`);
+    if (mode === 'branches') stateTracker.current.hasBranches = false;
+    else stateTracker.current.hasPrs = false;
   }, []);
 
   const fetchNodeDetails = useCallback(async (repoUrl: string, node: VisualizerNode) => {
-    const currentMode = currentModeRef.current;
+    const mode = currentModeRef.current;
     if (node.fileTree || node.type === 'trunk' || fetchingNodes.current.has(node.name)) return;
     
     fetchingNodes.current.add(node.name);
@@ -51,16 +109,15 @@ export const useGitTree = () => {
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
     
     try {
-      const baseBranch = tree?.name || 'main';
+      const activeTree = mode === 'branches' ? branchData.tree : prData.tree;
+      const baseBranch = activeTree?.name || 'main';
       const prNumber = node.metadata?.prNumber;
 
-      let additions = 0;
-      let deletions = 0;
-      let filesChanged = 0;
+      let additions = 0, deletions = 0, filesChanged = 0;
       let lastUpdated = node.lastUpdated;
       let prFiles = null;
 
-      if (currentMode === 'pr' && prNumber) {
+      if (mode === 'pr' && prNumber) {
         prFiles = await githubService.getPullRequestFiles(owner, repo, prNumber);
         additions = prFiles.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
         deletions = prFiles.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
@@ -74,81 +131,72 @@ export const useGitTree = () => {
         if (latestCommit) lastUpdated = latestCommit.commit.author.date;
       }
 
-      const details = {
-        additions,
-        deletions,
-        filesChanged,
-        lastUpdated,
-        fileTree: prFiles ? parseFileTree(prFiles) : undefined
-      };
+      const details = { additions, deletions, filesChanged, lastUpdated, fileTree: prFiles ? parseFileTree(prFiles) : undefined };
 
-      let finalTree: VisualizerNode | null = null;
-      let finalItems: any[] = [];
-
-      setItems(prev => {
-        finalItems = prev.map(item => {
-          const isMatch = currentMode === 'branches' ? item.name === node.name : item.number === prNumber;
+      const updateFn = (prev: {tree: VisualizerNode | null, items: any[]}) => {
+        const newItems = prev.items.map(item => {
+          const isMatch = mode === 'branches' ? item.name === node.name : item.number === prNumber;
           return isMatch ? { ...item, ...details } : item;
         });
-        return [...finalItems];
-      });
-      
-      setTree(prev => {
-        if (!prev) return null;
         const updateNodeDeep = (curr: VisualizerNode): VisualizerNode => {
-          const isMatch = currentMode === 'branches' 
-            ? curr.name === node.name 
-            : curr.metadata?.prNumber === prNumber;
-
-          if (isMatch) {
-            return { 
-              ...curr, 
-              ...details, 
-              metadata: { ...curr.metadata, ...details.fileTree?.metadata } 
-            };
-          }
+          const isMatch = mode === 'branches' ? curr.name === node.name : curr.metadata?.prNumber === prNumber;
+          if (isMatch) return { ...curr, ...details, metadata: { ...curr.metadata, ...details.fileTree?.metadata } };
           if (curr.children) return { ...curr, children: curr.children.map(updateNodeDeep) };
           return curr;
         };
-        finalTree = updateNodeDeep(prev);
-        return { ...finalTree };
-      });
+        const newTree = prev.tree ? updateNodeDeep(prev.tree) : null;
+        if (newItems.length > 0 && newTree) setCache(`${cleanPath}/${mode}`, { items: newItems, tree: newTree });
+        return { items: newItems, tree: newTree };
+      };
 
-      setTimeout(() => {
-        if (finalItems.length > 0 && finalTree) {
-          setCache(`${cleanPath}/${currentMode}`, { items: finalItems, tree: finalTree });
-        }
-      }, 100);
+      if (mode === 'branches') setBranchData(updateFn);
+      else setPrData(updateFn);
     } catch (e) {
       console.error('Failed to fetch node details', e);
     } finally {
       fetchingNodes.current.delete(node.name);
     }
-  }, [tree?.name]);
+  }, [branchData.tree, prData.tree]);
 
-  const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode) => {
+  const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode, forceRefresh = false) => {
     const fetchId = ++lastFetchId.current;
     currentModeRef.current = mode;
+    setActiveMode(mode);
+    
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
+    const isNewRepo = stateTracker.current.repo !== cleanPath;
+    
+    if (isNewRepo) {
+      stateTracker.current.repo = cleanPath;
+      stateTracker.current.hasBranches = false;
+      stateTracker.current.hasPrs = false;
+    }
+
+    // Immediate return if already in state
+    if (!forceRefresh) {
+      if (mode === 'branches' && stateTracker.current.hasBranches) return;
+      if (mode === 'pr' && stateTracker.current.hasPrs) return;
+    }
+
     const [owner, repo] = cleanPath.split('/');
     if (!owner || !repo) return;
 
     const cacheKey = `${cleanPath}/${mode}`;
-    const cached = getCache(cacheKey);
-    if (cached) {
-      setItems(cached.items);
-      setTree(cached.tree);
-      setGrowth(1);
-      setError(null);
-      return;
+    if (!forceRefresh) {
+      const cached = getCache(cacheKey);
+      if (cached) {
+        if (mode === 'branches') { setBranchData(cached); stateTracker.current.hasBranches = true; }
+        else { setPrData(cached); stateTracker.current.hasPrs = true; }
+        setGrowth(1); setError(null); setLoading(false);
+        return;
+      }
     }
 
-    setLoading(true);
-    setError(null);
-    setTree(null); 
-    setItems([]); 
-    setGrowth(0);
+    setLoading(true); setError(null); setGrowth(0);
     cancelAnimationFrame(frameRef.current);
+
+    if (mode === 'branches') { setBranchData({ tree: null, items: [] }); stateTracker.current.hasBranches = false; }
+    else { setPrData({ tree: null, items: [] }); stateTracker.current.hasPrs = false; }
 
     try {
       const [repoData, openPRs] = await Promise.all([
@@ -156,13 +204,16 @@ export const useGitTree = () => {
         githubService.getPullRequests(owner, repo)
       ]);
       if (fetchId !== lastFetchId.current) return;
-      
       const base = repoData.default_branch;
 
       if (mode === 'branches') {
         const branchList = await githubService.getBranches(owner, repo);
-        const comparedBranches: GitBranch[] = [];
+        const initial = branchList.map(b => ({ name: b.name, sha: b.commit.sha, ahead: 0, behind: 0, isBase: b.name === base }));
+        setBranchData({ items: initial, tree: parseBranchTree(initial, base) });
+        stateTracker.current.hasBranches = true;
+        animate();
 
+        let enriched = [...initial];
         for (let i = 0; i < branchList.length; i += 50) {
           if (fetchId !== lastFetchId.current) return;
           const chunk = branchList.slice(i, i + 50);
@@ -171,88 +222,54 @@ export const useGitTree = () => {
             try {
               const comp = await githubService.compare(owner, repo, base, b.name);
               const pr = openPRs.find(p => p.head.ref === b.name);
-              const latestCommit = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
-              
+              const latest = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
               return {
                 name: b.name, sha: b.commit.sha, mergeBaseSha: comp.merge_base_commit?.sha,
                 history: comp.commits?.map((c: any) => c.sha) || [], ahead: comp.ahead_by, behind: comp.behind_by,
                 isMerged: comp.status === 'identical' || comp.status === 'behind', hasConflicts: pr?.mergeable_state === 'dirty',
-                lastUpdated: latestCommit?.commit.author.date || pr?.updated_at,
-                author: latestCommit ? { login: latestCommit.author?.login || latestCommit.commit.author.name, avatarUrl: latestCommit.author?.avatar_url } 
-                : (pr ? { login: pr.user.login, avatarUrl: pr.user.avatar_url } : undefined)
+                lastUpdated: latest?.commit.author.date || pr?.updated_at,
+                author: latest ? { login: latest.author?.login || latest.commit.author.name, avatarUrl: latest.author?.avatar_url } : (pr ? { login: pr.user.login, avatarUrl: pr.user.avatar_url } : undefined)
               } as GitBranch;
-            } catch (e: any) { 
-              if (e.message?.includes('403')) throw e;
-              return null;
-            }
+            } catch (e: any) { if (e.message?.includes('403')) throw e; return null; }
           }));
 
           if (fetchId !== lastFetchId.current) return;
-          const valid = results.filter((res): res is GitBranch => res !== null);
-          comparedBranches.push(...valid);
-          const currentTree = parseBranchTree([...comparedBranches], base);
-          setItems([...comparedBranches]);
-          setTree(currentTree);
-          setCache(cacheKey, { items: [...comparedBranches], tree: currentTree });
-          if (i === 0) animate();
+          results.forEach(res => { if (res) { const idx = enriched.findIndex(b => b.name === res.name); if (idx !== -1) enriched[idx] = { ...enriched[idx], ...res }; } });
+          const currentTree = parseBranchTree([...enriched], base);
+          setBranchData({ items: [...enriched], tree: currentTree });
+          setCache(cacheKey, { items: [...enriched], tree: currentTree });
         }
       } else {
-        const comparedPRs: any[] = [];
+        const initialPRs = openPRs.map(pr => ({ ...pr, ahead: 0, behind: 0, review_status: 'PENDING', lastUpdated: pr.updated_at, author: { login: pr.user.login, avatarUrl: pr.user.avatar_url } }));
+        const initialNodes: GitBranch[] = initialPRs.map(pr => ({ name: `${pr.head.ref} #${pr.number}`, sha: pr.head.sha, ahead: 0, behind: 0, lastUpdated: pr.lastUpdated, author: pr.author, mergeBaseSha: pr.base.ref === base ? undefined : pr.base.ref, metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.base.ref } } as any));
+        setPrData({ items: initialPRs, tree: parseBranchTree(initialNodes, base) });
+        stateTracker.current.hasPrs = true;
+        animate();
+
+        let enriched = [...initialPRs];
         for (let i = 0; i < openPRs.length; i += 15) {
           if (fetchId !== lastFetchId.current) return;
           const chunk = openPRs.slice(i, i + 15);
           const results = await Promise.all(chunk.map(async (pr): Promise<any | null> => {
             try {
-              // Use SHA instead of ref to support cross-repo (fork) PRs
-              const [comp, reviews] = await Promise.all([
-                githubService.compare(owner, repo, base, pr.head.sha).catch(() => null),
-                githubService.getPullRequestReviews(owner, repo, pr.number).catch(() => [])
-              ]);
-              
+              const [comp, reviews] = await Promise.all([ githubService.compare(owner, repo, base, pr.head.sha).catch(() => null), githubService.getPullRequestReviews(owner, repo, pr.number).catch(() => []) ]);
               const latestReview = reviews && reviews.length > 0 ? reviews[reviews.length - 1].state : 'PENDING';
               const latestCommit = comp?.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
-              
-              return {
-                ...pr, 
-                ahead: comp?.ahead_by || 0, 
-                behind: comp?.behind_by || 0, 
-                review_status: latestReview,
-                lastUpdated: latestCommit?.commit.author.date || pr.updated_at,
-                author: latestCommit ? { login: latestCommit.author?.login || latestCommit.commit.author.name, avatarUrl: latestCommit.author?.avatar_url } 
-                : { login: pr.user.login, avatarUrl: pr.user.avatar_url }
-              };
-            } catch (err) { 
-              console.warn(`[useGitTree] Failed to fetch details for PR #${pr.number}`, err);
-              return {
-                ...pr,
-                ahead: 0, behind: 0, review_status: 'PENDING',
-                lastUpdated: pr.updated_at,
-                author: { login: pr.user.login, avatarUrl: pr.user.avatar_url }
-              };
-            }
+              return { id: pr.id, ahead: comp?.ahead_by || 0, behind: comp?.behind_by || 0, review_status: latestReview, lastUpdated: latestCommit?.commit.author.date || pr.updated_at, author: latestCommit ? { login: latestCommit.author?.login || latestCommit.commit.author.name, avatarUrl: latestCommit.author?.avatar_url } : { login: pr.user.login, avatarUrl: pr.user.avatar_url } };
+            } catch { return null; }
           }));
 
           if (fetchId !== lastFetchId.current) return;
-          const valid = results.filter(res => res !== null);
-          comparedPRs.push(...valid);
-          const prBranches: GitBranch[] = comparedPRs.map(pr => ({
-            name: `${pr.head.ref} #${pr.number}`, // Ensure uniqueness
-            sha: pr.head.sha, ahead: pr.ahead, behind: pr.behind,
-            lastUpdated: pr.lastUpdated, author: pr.author,
-            mergeBaseSha: pr.base.ref === base ? undefined : pr.base.ref, 
-            metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title || 'Untitled PR', isDraft: pr.draft, baseBranch: pr.base.ref }
-          } as any));
-          const currentTree = parseBranchTree(prBranches, base);
-          setItems([...comparedPRs]);
-          setTree(currentTree);
-          setCache(cacheKey, { items: [...comparedPRs], tree: currentTree });
-          if (i === 0) animate();
+          results.forEach(res => { if (res) { const idx = enriched.findIndex(p => p.id === res.id); if (idx !== -1) enriched[idx] = { ...enriched[idx], ...res }; } });
+          const prNodes: GitBranch[] = enriched.map(pr => ({ name: `${pr.head.ref} #${pr.number}`, sha: pr.head.sha, ahead: pr.ahead, behind: pr.behind, lastUpdated: pr.lastUpdated, author: pr.author, mergeBaseSha: pr.base.ref === base ? undefined : pr.base.ref, metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.base.ref } } as any));
+          const currentTree = parseBranchTree(prNodes, base);
+          setPrData({ items: [...enriched], tree: currentTree });
+          setCache(cacheKey, { items: [...enriched], tree: currentTree });
         }
       }
     } catch (err: any) {
       if (fetchId !== lastFetchId.current) return;
-      if (err.message?.includes('403')) setError('RATE_LIMIT');
-      else setError('FETCH_ERROR');
+      setError(err.message?.includes('403') ? 'RATE_LIMIT' : 'FETCH_ERROR');
     } finally {
       if (fetchId === lastFetchId.current) setLoading(false);
     }

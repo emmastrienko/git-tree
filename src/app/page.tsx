@@ -88,7 +88,7 @@ export default function Home() {
     params.set('repo', repoUrl);
     params.set('mode', viewMode);
     window.history.pushState(null, '', `?${params.toString()}`);
-    fetchTree(repoUrl, viewMode);
+    fetchTree(repoUrl, viewMode, true);
     isInitialized.current = true;
   }, [repoUrl, viewMode, clearCache, fetchTree]);
 

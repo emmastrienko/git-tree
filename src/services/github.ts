@@ -19,17 +19,22 @@ export const githubService = {
   getBranches: async (owner: string, repo: string) => {
     let all: any[] = [];
     let page = 1;
-    const MAX_PAGES = 10; // 1000 branches limit for UI stability
+    const MAX_PAGES = 10; 
     
-    while (page <= MAX_PAGES) {
-      const url = `/api/github/repos/${owner}/${repo}/branches?per_page=100&page=${page}`;
-      const pageData = await fetcher<any[]>(url);
-      
-      if (!pageData || pageData.length === 0) break;
-      
-      all = [...all, ...pageData];
-      if (pageData.length < 100) break;
-      page++;
+    try {
+      while (page <= MAX_PAGES) {
+        const url = `/api/github/repos/${owner}/${repo}/branches?per_page=100&page=${page}`;
+        const pageData = await fetcher<any[]>(url);
+        
+        if (!pageData || pageData.length === 0) break;
+        
+        all = [...all, ...pageData];
+        if (pageData.length < 100) break;
+        page++;
+      }
+    } catch (e) {
+      console.warn(`[GitHub Service] Partial branches fetch: ${all.length} items. Error:`, e);
+      if (all.length === 0) throw e;
     }
     return all;
   },
@@ -37,17 +42,22 @@ export const githubService = {
   getPullRequests: async (owner: string, repo: string) => {
     let all: any[] = [];
     let page = 1;
-    const MAX_PAGES = 5; // Up to 500 PRs
+    const MAX_PAGES = 5; 
     
-    while (page <= MAX_PAGES) {
-      const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=100&page=${page}`;
-      const pageData = await fetcher<any[]>(url);
-      
-      if (!pageData || pageData.length === 0) break;
-      
-      all = [...all, ...pageData];
-      if (pageData.length < 100) break;
-      page++;
+    try {
+      while (page <= MAX_PAGES) {
+        const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=100&page=${page}`;
+        const pageData = await fetcher<any[]>(url);
+        
+        if (!pageData || pageData.length === 0) break;
+        
+        all = [...all, ...pageData];
+        if (pageData.length < 100) break;
+        page++;
+      }
+    } catch (e) {
+      console.warn(`[GitHub Service] Partial PRs fetch: ${all.length} items. Error:`, e);
+      if (all.length === 0) throw e;
     }
     return all;
   },
