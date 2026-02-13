@@ -117,6 +117,14 @@ export default function Home() {
     setIsSidebarHover(!!name);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedNodeName(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
     <MainLayout
       header={({ onMenuClick }) => (
@@ -138,6 +146,7 @@ export default function Home() {
           onSelect={handleSidebarSelect}
           filterAuthor={filterAuthor}
           onFilterAuthor={setFilterAuthor}
+          selectedNodeName={selectedNodeName}
         />
       }
       footer={<Footer />}

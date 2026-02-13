@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X, ArrowUpDown, Filter, User } from 'lucide-react';
 import { GitBranch, GitPullRequest, ViewMode } from '@/types';
 
@@ -11,6 +11,7 @@ interface Props {
   onSelect?: (name: string) => void;
   filterAuthor?: string | null;
   onFilterAuthor?: (login: string | null) => void;
+  selectedNodeName?: string | null;
 }
 
 type SortOption = 'recent' | 'name';
@@ -33,7 +34,8 @@ export const Sidebar: React.FC<Props> = ({
   onHover, 
   onSelect,
   filterAuthor,
-  onFilterAuthor 
+  onFilterAuthor,
+  selectedNodeName
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('recent');
@@ -87,6 +89,17 @@ export const Sidebar: React.FC<Props> = ({
     
     return matchesAuthor && matchesSearch;
   });
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selectedNodeName && scrollRef.current) {
+      const selectedEl = scrollRef.current.querySelector('[data-selected="true"]');
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [selectedNodeName]);
 
   return (
     <aside className="w-full h-full border-r border-border bg-slate-900 lg:bg-slate-950/50 flex flex-col shrink-0 z-10 shadow-2xl lg:shadow-none">
@@ -172,56 +185,59 @@ export const Sidebar: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 scrollbar-thin">
         <div className="flex flex-col gap-0.5" onMouseLeave={() => onHover?.(null)}>
           {filteredItems.map((item, i) => {
             const b = item as any;
             const name = viewMode === 'branches' ? b.name : (b.title || b.metadata?.displayTitle || 'Untitled PR');
             const hoverKey = viewMode === 'branches' ? b.name : `${b.head?.ref} #${b.number}`;
             const login = b.author?.login || b.user?.login;
+            const isSelected = selectedNodeName === hoverKey;
 
             return (
               <button 
                 key={i} 
                 onMouseEnter={() => onHover?.(hoverKey)}
                 onClick={() => onSelect?.(hoverKey)}
+                data-selected={isSelected}
                 className={`w-full text-left px-3 py-2 rounded-md transition-all flex items-start gap-3 group ${
+                  isSelected ? 'bg-indigo-500/20 border-l-2 border-indigo-500' : 
                   filterAuthor === login ? 'bg-indigo-500/10' : 'hover:bg-white/[0.03]'
                 }`}
               >
-                <div className="mt-1 text-slate-600 group-hover:text-indigo-400 transition-colors">
+                <div className={`mt-1 transition-colors ${isSelected ? 'text-indigo-400' : 'text-slate-600 group-hover:text-indigo-400'}`}>
                   {viewMode === 'branches' ? <GitBranchIcon size={12} /> : <GitPRIcon size={12} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-[12px] font-medium text-slate-300 truncate group-hover:text-slate-100 transition-colors">
+                    <div className={`text-[12px] font-medium truncate transition-colors ${isSelected ? 'text-white' : 'text-slate-300 group-hover:text-slate-100'}`}>
                       {name}
                     </div>
                     {b.lastUpdated && (
-                      <span className="text-[9px] text-slate-600 whitespace-nowrap">{formatShortDate(b.lastUpdated)}</span>
+                      <span className={`text-[9px] whitespace-nowrap ${isSelected ? 'text-indigo-300' : 'text-slate-600'}`}>{formatShortDate(b.lastUpdated)}</span>
                     )}
                   </div>
                   
                   <div className="flex items-center justify-between mt-1">
                     {viewMode === 'branches' && (
-                      <div className="flex items-center gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                      <div className={`flex items-center gap-3 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}`}>
                         <div className="flex items-center gap-1">
                           <div className="w-1 h-1 rounded-full bg-emerald-500" />
-                          <span className="text-[9px] font-mono text-slate-400">{b.ahead}</span>
+                          <span className={`text-[9px] font-mono ${isSelected ? 'text-emerald-300' : 'text-slate-400'}`}>{b.ahead}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <div className="w-1 h-1 rounded-full bg-rose-500" />
-                          <span className="text-[9px] font-mono text-slate-400">{b.behind}</span>
+                          <span className={`text-[9px] font-mono ${isSelected ? 'text-rose-300' : 'text-slate-400'}`}>{b.behind}</span>
                         </div>
                       </div>
                     )}
                     
                     {login && (
                       <div className="flex items-center gap-1.5 ml-auto">
-                        <span className="text-[9px] text-slate-600 hidden group-hover:inline">{login}</span>
+                        <span className={`text-[9px] hidden group-hover:inline ${isSelected ? 'text-indigo-300' : 'text-slate-600'}`}>{login}</span>
                         <img 
                           src={b.author?.avatarUrl || b.user?.avatar_url} 
-                          className={`w-3.5 h-3.5 rounded-full border ${filterAuthor === login ? 'border-indigo-500' : 'border-white/10'}`} 
+                          className={`w-3.5 h-3.5 rounded-full border ${isSelected || filterAuthor === login ? 'border-indigo-500' : 'border-white/10'}`} 
                           alt="" 
                         />
                       </div>
