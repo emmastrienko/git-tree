@@ -16,8 +16,24 @@ import { useGitTree } from '@/hooks/useGitTree';
 import { ViewMode, VisualizerNode } from '@/types';
 
 export default function Home() {
-  const [repoUrl, setRepoUrl] = useState('facebook/react');
-  const [viewMode, setViewMode] = useState<ViewMode>('branches');
+  // Initialize from URL or SessionStorage immediately to avoid "facebook/react" default flash/bug
+  const getInitialState = () => {
+    if (typeof window === 'undefined') return { repo: 'facebook/react', mode: 'branches' as ViewMode };
+    const params = new URLSearchParams(window.location.search);
+    const urlRepo = params.get('repo');
+    const urlMode = params.get('mode') as ViewMode;
+    const lastRepo = sessionStorage.getItem('last_repo_url');
+    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
+    
+    return {
+      repo: urlRepo || lastRepo || 'facebook/react',
+      mode: urlMode || lastMode || 'branches'
+    };
+  };
+
+  const initialState = getInitialState();
+  const [repoUrl, setRepoUrl] = useState(initialState.repo);
+  const [viewMode, setViewMode] = useState<ViewMode>(initialState.mode);
   const [is3D, setIs3D] = useState(false);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
   const [hoveredNodeName, setHoveredNodeName] = useState<string | null>(null);
@@ -49,20 +65,10 @@ export default function Home() {
 
   useEffect(() => {
     if (isInitialized.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const urlRepo = params.get('repo');
-    const urlMode = params.get('mode') as ViewMode;
-    const lastRepo = sessionStorage.getItem('last_repo_url');
-    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
-    const targetRepo = urlRepo || lastRepo;
-    const targetMode = urlMode || lastMode || 'branches';
-    if (targetRepo) {
-      setRepoUrl(targetRepo);
-      setViewMode(targetMode);
-      fetchTree(targetRepo, targetMode);
-      isInitialized.current = true;
-    }
-  }, [fetchTree]);
+    // We already have the correct state from initialization, just trigger the first fetch
+    fetchTree(repoUrl, viewMode);
+    isInitialized.current = true;
+  }, [fetchTree, repoUrl, viewMode]);
 
   useEffect(() => {
     if (!isInitialized.current) return;
@@ -71,6 +77,7 @@ export default function Home() {
       params.set('repo', repoUrl);
       params.set('mode', viewMode);
       window.history.pushState(null, '', `?${params.toString()}`);
+      sessionStorage.setItem('last_repo_url', repoUrl);
       sessionStorage.setItem('last_view_mode', viewMode);
       fetchTree(repoUrl, viewMode);
     }

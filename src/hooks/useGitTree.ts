@@ -269,7 +269,9 @@ export const useGitTree = () => {
       }
     } catch (err: any) {
       if (fetchId !== lastFetchId.current) return;
-      setError(err.message?.includes('403') ? 'RATE_LIMIT' : 'FETCH_ERROR');
+      if (err.message?.includes('403')) setError('RATE_LIMIT');
+      else if (err.message?.includes('404')) setError('REPO_NOT_FOUND');
+      else setError('FETCH_ERROR');
     } finally {
       if (fetchId === lastFetchId.current) setLoading(false);
     }
