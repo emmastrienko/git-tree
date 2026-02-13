@@ -79,9 +79,8 @@ export default function Home() {
       window.history.pushState(null, '', `?${params.toString()}`);
       sessionStorage.setItem('last_repo_url', repoUrl);
       sessionStorage.setItem('last_view_mode', viewMode);
-      fetchTree(repoUrl, viewMode);
     }
-  }, [viewMode, repoUrl, fetchTree]);
+  }, [viewMode, repoUrl]);
 
   const handleFetch = useCallback(() => {
     setSelectedNodeName(null);
