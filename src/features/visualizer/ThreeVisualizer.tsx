@@ -292,21 +292,29 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     };
 
     let startPos = { x: 0, y: 0 };
+    let isMouseDown = false;
+
     const onMove = (e: MouseEvent) => {
       const hit = getTargetNode(e.clientX, e.clientY);
-      container.style.cursor = hit ? 'pointer' : 'grab';
-      if (!isDimmed) {
+      container.style.cursor = isMouseDown ? 'grabbing' : (hit ? 'pointer' : 'grab');
+      
+      if (!isDimmed && !isMouseDown) {
         const newHoverName = hit ? hit.node.name : null;
         if (newHoverName !== hoveredNodeName) onHover?.(newHoverName);
+      } else if (isMouseDown && hoveredNodeName) {
+        // Clear hover if we start moving
+        onHover?.(null);
       }
     };
 
     const onDown = (e: MouseEvent) => {
+      isMouseDown = true;
       startPos = { x: e.clientX, y: e.clientY };
       container.style.cursor = 'grabbing';
     };
 
     const onUp = (e: MouseEvent) => {
+      isMouseDown = false;
       container.style.cursor = 'grab';
       if (Math.abs(e.clientX - startPos.x) < 5 && Math.abs(e.clientY - startPos.y) < 5) {
         const hit = getTargetNode(e.clientX, e.clientY);

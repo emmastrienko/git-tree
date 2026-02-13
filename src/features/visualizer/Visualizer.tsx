@@ -90,13 +90,13 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       
       const container = canvas.parentElement;
       if (container) {
-        if (hoveredNode) {
+        if (hoveredNode && !isDragging) {
           container.style.cursor = 'pointer';
           if (hoveredNode.name !== hoveredNodeName && !isDimmed) {
             onHover?.(hoveredNode.name);
           }
         } else {
-          container.style.cursor = 'grab';
+          container.style.cursor = isDragging ? 'grabbing' : 'grab';
           if (hoveredNodeName && !isDimmed) {
             onHover?.(null);
           }
