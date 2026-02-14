@@ -88,15 +88,15 @@ export const githubService = {
     }).then(res => res.json());
   },
 
-  getBulkData: async (owner: string, repo: string, cursor: string | null = null) => {
+  getBulkData: async (owner: string, repo: string, branchCursor: string | null = null, prCursor: string | null = null) => {
     const query = `
-      query($owner: String!, $repo: String!, $cursor: String) {
+      query($owner: String!, $repo: String!, $branchCursor: String, $prCursor: String) {
         repository(owner: $owner, name: $repo) {
           defaultBranchRef { 
             name 
             target { ... on Commit { oid } }
           }
-          refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+          refs(refPrefix: "refs/heads/", first: 100, after: $branchCursor) {
             pageInfo {
               hasNextPage
               endCursor
@@ -114,7 +114,11 @@ export const githubService = {
               }
             }
           }
-          pullRequests(first: 100, states: OPEN) {
+          pullRequests(first: 100, states: OPEN, after: $prCursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               number
               title
@@ -136,6 +140,6 @@ export const githubService = {
         }
       }
     `;
-    return githubService.graphql(query, { owner, repo, cursor });
+    return githubService.graphql(query, { owner, repo, branchCursor, prCursor });
   }
 };
