@@ -73,14 +73,22 @@ export default function Home() {
   useEffect(() => {
     if (!isInitialized.current) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('mode') !== viewMode || params.get('repo') !== repoUrl) {
+    const prevMode = params.get('mode');
+    const prevRepo = params.get('repo');
+    
+    if (prevMode !== viewMode || prevRepo !== repoUrl) {
       params.set('repo', repoUrl);
       params.set('mode', viewMode);
       window.history.pushState(null, '', `?${params.toString()}`);
       sessionStorage.setItem('last_repo_url', repoUrl);
       sessionStorage.setItem('last_view_mode', viewMode);
+      
+      // Auto-fetch ONLY if the mode changed on the same repository
+      if (prevMode !== viewMode && prevRepo === repoUrl) {
+        fetchTree(repoUrl, viewMode);
+      }
     }
-  }, [viewMode, repoUrl]);
+  }, [viewMode, repoUrl, fetchTree]);
 
   const handleFetch = useCallback(() => {
     setSelectedNodeName(null);
