@@ -26,7 +26,7 @@ export default function Home() {
   const [isSidebarHover, setIsSidebarHover] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [treeKey, setTreeKey] = useState(0); 
-  const { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
+  const { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
   const isInitialized = useRef(false);
 
   const selectedNode = useMemo(() => {
@@ -164,7 +164,7 @@ export default function Home() {
         <ViewToggle is3D={is3D} onToggle={setIs3D} />
         <Legend />
 
-        {loading && tree && <SyncStatus itemCount={items.length} />}
+        {(loading || syncing) && tree && <SyncStatus itemCount={items.length} syncing={syncing} />}
 
         {selectedNode && (
           <NodeTooltip 

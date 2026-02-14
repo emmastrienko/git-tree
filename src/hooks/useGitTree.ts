@@ -62,6 +62,7 @@ const getCache = (key: string) => {
 
 export const useGitTree = () => {
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [growth, setGrowth] = useState(0);
   
@@ -188,15 +189,10 @@ export const useGitTree = () => {
       }
     }
 
-    // If already discovered and already enriched for this mode, return
     if (!forceRefresh && stateTracker.current.enrichedModes.has(mode)) {
       if (mode === 'branches' && stateTracker.current.hasBranches) return;
       if (mode === 'pr' && stateTracker.current.hasPrs) return;
     }
-
-    // If already discovered but NOT enriched, we will trigger discovery loop anyway 
-    // to reuse existing data and run enrichment. 
-    // Optimization: If discovery is complete, discovery loop finishes instantly.
 
     setLoading(true); setError(null); setGrowth(0);
     cancelAnimationFrame(frameRef.current);
@@ -217,25 +213,26 @@ export const useGitTree = () => {
       const now = Date.now();
 
       const enrichItems = async (itemsToEnrich: any[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
-        for (let i = 0; i < itemsToEnrich.length; i += 20) {
-          if (fetchId !== lastFetchId.current) return;
-          const chunk = itemsToEnrich.slice(i, i + 20);
-          
-          let headShas: string[] = [];
-          if (!isPrMode) {
-            headShas = chunk
-              .filter(item => {
-                if (item.name === currentBase || !item.sha) return false;
-                const lastUpdate = item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0;
-                return !lastUpdate || (now - lastUpdate <= TWO_YEARS_MS);
-              })
-              .map(item => item.sha);
-          } else {
-            headShas = chunk.filter(p => p.head?.sha).map(p => p.head.sha);
-          }
+        setSyncing(true);
+        try {
+          for (let i = 0; i < itemsToEnrich.length; i += 20) {
+            if (fetchId !== lastFetchId.current) return;
+            const chunk = itemsToEnrich.slice(i, i + 20);
+            
+            let headShas: string[] = [];
+            if (!isPrMode) {
+              headShas = chunk
+                .filter(item => {
+                  if (item.name === currentBase || !item.sha) return false;
+                  const lastUpdate = item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0;
+                  return !lastUpdate || (now - lastUpdate <= TWO_YEARS_MS);
+                })
+                .map(item => item.sha);
+            } else {
+              headShas = chunk.filter(p => p.head?.sha).map(p => p.head.sha);
+            }
 
-          if (headShas.length > 0) {
-            try {
+            if (headShas.length > 0) {
               const { results } = await githubService.compareBatch(owner, repo, currentBaseSha, headShas);
               if (fetchId !== lastFetchId.current) return;
 
@@ -273,22 +270,13 @@ export const useGitTree = () => {
               else setPrData(updateFn);
               
               stateTracker.current.enrichedModes.add(isPrMode ? 'pr' : 'branches');
-            } catch (e) {
-              console.error('[useGitTree] Enrichment error:', e);
             }
           }
+        } finally {
+          if (fetchId === lastFetchId.current) setSyncing(false);
         }
       };
 
-      // If we already have branches/PRs from a previous mode switch, trigger enrichment immediately
-      if (!stateTracker.current.enrichedModes.has(mode)) {
-        if (mode === 'branches' && branchData.items.length > 0) {
-          // We need base info which might be missing if we return too early
-          // Proceed to loop to get base info if not yet available
-        }
-      }
-
-      // Discovery loop
       while ((hasMoreBranches || hasMorePrs) && pageCount < 10) {
         const { data, errors } = await githubService.getBulkData(owner, repo, branchCursor, prCursor);
         if (errors) console.warn('[useGitTree] GraphQL partial errors:', errors);
@@ -351,7 +339,6 @@ export const useGitTree = () => {
         animate();
         pageCount++;
 
-        // Trigger enrichment immediately for the mode we are actually looking at
         if (mode === 'branches' && newBranches.length > 0) {
           enrichItems(newBranches, base, baseSha, false);
         } else if (mode === 'pr' && newPRs.length > 0) {
@@ -359,7 +346,6 @@ export const useGitTree = () => {
         }
       }
 
-      // Final check: if discovery was already done but mode changed, trigger full enrichment for current mode
       if (fetchId === lastFetchId.current && !stateTracker.current.enrichedModes.has(mode)) {
         if (mode === 'branches' && branchData.items.length > 0) {
           enrichItems(branchData.items, base, baseSha, false);
@@ -379,5 +365,5 @@ export const useGitTree = () => {
     }
   }, [animate, branchData.items, prData.items]);
 
-  return { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
+  return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
 };
