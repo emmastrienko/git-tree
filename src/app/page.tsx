@@ -16,26 +16,9 @@ import { useGitTree } from '@/hooks/useGitTree';
 import { ViewMode, VisualizerNode } from '@/types';
 
 export default function Home() {
-  // Initialize from URL or SessionStorage immediately to avoid "facebook/react" default flash/bug
-  const getInitialState = () => {
-    if (typeof window === 'undefined') return { repo: 'facebook/react', mode: 'branches' as ViewMode, shouldAutoFetch: false };
-    const params = new URLSearchParams(window.location.search);
-    const urlRepo = params.get('repo');
-    const urlMode = params.get('mode') as ViewMode;
-    const lastRepo = sessionStorage.getItem('last_repo_url');
-    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
-    
-    const repo = urlRepo || lastRepo;
-    return {
-      repo: repo || 'facebook/react',
-      mode: urlMode || lastMode || 'branches',
-      shouldAutoFetch: !!repo
-    };
-  };
-
-  const initialState = getInitialState();
-  const [repoUrl, setRepoUrl] = useState(initialState.repo);
-  const [viewMode, setViewMode] = useState<ViewMode>(initialState.mode);
+  const [repoUrl, setRepoUrl] = useState('facebook/react');
+  const [viewMode, setViewMode] = useState<ViewMode>('branches');
+  
   const [is3D, setIs3D] = useState(false);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
   const [hoveredNodeName, setHoveredNodeName] = useState<string | null>(null);
@@ -67,11 +50,27 @@ export default function Home() {
 
   useEffect(() => {
     if (isInitialized.current) return;
-    if (initialState.shouldAutoFetch) {
-      fetchTree(repoUrl, viewMode);
+
+    const params = new URLSearchParams(window.location.search);
+    const urlRepo = params.get('repo');
+    const urlMode = params.get('mode') as ViewMode;
+    const lastRepo = sessionStorage.getItem('last_repo_url');
+    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
+    
+    const finalRepo = urlRepo || lastRepo;
+    const finalMode = urlMode || lastMode || 'branches';
+
+    if (finalRepo) {
+      setRepoUrl(finalRepo);
+      setViewMode(finalMode);
+      fetchTree(finalRepo, finalMode);
+    } else {
+      setRepoUrl('facebook/react');
+      setViewMode('branches');
     }
+
     isInitialized.current = true;
-  }, [fetchTree, repoUrl, viewMode, initialState.shouldAutoFetch]);
+  }, [fetchTree]);
 
   useEffect(() => {
     if (!isInitialized.current) return;
