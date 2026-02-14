@@ -1,14 +1,12 @@
 import { GitBranch, GitPullRequest } from '@/types';
 
 const fetcher = async <T>(url: string): Promise<T> => {
-  console.log(`[GitHub API] Fetching: ${url}`);
   const res = await fetch(url);
   if (!res.ok) {
     console.error(`[GitHub API] Error ${res.status} for ${url}`);
     throw new Error(`GitHub API: ${res.status}`);
   }
   const data = await res.json();
-  console.log(`[GitHub API] Success: ${url}`, data);
   return data;
 };
 
@@ -69,9 +67,75 @@ export const githubService = {
     fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`),
 
   compare: (owner: string, repo: string, base: string, head: string) => {
-    // Slashes in branch names must be encoded for the Compare API
     const encodedBase = encodeURIComponent(base);
     const encodedHead = encodeURIComponent(head);
     return fetcher<any>(`/api/github/repos/${owner}/${repo}/compare/${encodedBase}...${encodedHead}`);
   },
+
+  compareBatch: (owner: string, repo: string, base: string, heads: string[]) => {
+    return fetch('/api/github/compare-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner, repo, base, heads })
+    }).then(res => res.json());
+  },
+
+  graphql: (query: string, variables: any = {}) => {
+    return fetch('/api/github/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables })
+    }).then(res => res.json());
+  },
+
+  getBulkData: async (owner: string, repo: string, cursor: string | null = null) => {
+    const query = `
+      query($owner: String!, $repo: String!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          defaultBranchRef { 
+            name 
+            target { ... on Commit { oid } }
+          }
+          refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              name
+              target {
+                ... on Commit {
+                  oid
+                  authoredDate
+                  author {
+                    user { login avatarUrl }
+                  }
+                }
+              }
+            }
+          }
+          pullRequests(first: 100, states: OPEN) {
+            nodes {
+              number
+              title
+              state
+              url
+              isDraft
+              baseRefName
+              headRefName
+              headRef {
+                target { ... on Commit { oid } }
+              }
+              author { login avatarUrl }
+              updatedAt
+              reviews(last: 1) {
+                nodes { state }
+              }
+            }
+          }
+        }
+      }
+    `;
+    return githubService.graphql(query, { owner, repo, cursor });
+  }
 };
