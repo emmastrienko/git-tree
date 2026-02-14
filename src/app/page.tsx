@@ -26,7 +26,7 @@ export default function Home() {
     const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
     
     return {
-      repo: urlRepo || lastRepo || 'facebook/react',
+      repo: urlRepo || lastRepo || '',
       mode: urlMode || lastMode || 'branches'
     };
   };
@@ -64,8 +64,7 @@ export default function Home() {
   }, [tree]);
 
   useEffect(() => {
-    if (isInitialized.current) return;
-    // We already have the correct state from initialization, just trigger the first fetch
+    if (isInitialized.current || !repoUrl) return;
     fetchTree(repoUrl, viewMode);
     isInitialized.current = true;
   }, [fetchTree, repoUrl, viewMode]);
