@@ -272,7 +272,7 @@ export const useGitTree = () => {
       if (!baseSha) throw new Error('Could not resolve default branch SHA');
 
       if (mode === 'branches') {
-        const allItems = branchList.map((b: any) => ({ 
+        const allItems: GitBranch[] = branchList.map((b: any) => ({ 
           name: b.name, 
           sha: b.target?.oid || '', 
           ahead: 0, 
