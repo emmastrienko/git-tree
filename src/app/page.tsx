@@ -18,16 +18,18 @@ import { ViewMode, VisualizerNode } from '@/types';
 export default function Home() {
   // Initialize from URL or SessionStorage immediately to avoid "facebook/react" default flash/bug
   const getInitialState = () => {
-    if (typeof window === 'undefined') return { repo: 'facebook/react', mode: 'branches' as ViewMode };
+    if (typeof window === 'undefined') return { repo: 'facebook/react', mode: 'branches' as ViewMode, shouldAutoFetch: false };
     const params = new URLSearchParams(window.location.search);
     const urlRepo = params.get('repo');
     const urlMode = params.get('mode') as ViewMode;
     const lastRepo = sessionStorage.getItem('last_repo_url');
     const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
     
+    const repo = urlRepo || lastRepo;
     return {
-      repo: urlRepo || lastRepo || '',
-      mode: urlMode || lastMode || 'branches'
+      repo: repo || 'facebook/react',
+      mode: urlMode || lastMode || 'branches',
+      shouldAutoFetch: !!repo
     };
   };
 
@@ -64,10 +66,12 @@ export default function Home() {
   }, [tree]);
 
   useEffect(() => {
-    if (isInitialized.current || !repoUrl) return;
-    fetchTree(repoUrl, viewMode);
+    if (isInitialized.current) return;
+    if (initialState.shouldAutoFetch) {
+      fetchTree(repoUrl, viewMode);
+    }
     isInitialized.current = true;
-  }, [fetchTree, repoUrl, viewMode]);
+  }, [fetchTree, repoUrl, viewMode, initialState.shouldAutoFetch]);
 
   useEffect(() => {
     if (!isInitialized.current) return;
