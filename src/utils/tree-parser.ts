@@ -32,23 +32,34 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     oldestTimestamp: prevMeta.oldestTimestamp ? Math.min(prevMeta.oldestTimestamp, currentOldest) : currentOldest
   };
 
+  const shaToNode = new Map<string, VisualizerNode>();
+  branches.forEach(b => {
+    const node = nodes.get(b.name)!;
+    if (b.sha) shaToNode.set(b.sha, node);
+  });
+
   branches.forEach(b => {
     if (b.name === defaultBranch) return;
 
     const node = nodes.get(b.name)!;
-    const bHistory = new Set(b.history || []);
+    const bHistory = b.history || [];
     let bestParent = trunk;
     let maxScore = -1;
 
-    for (const p of branches) {
-      if (p.name === b.name || p.isBase) continue;
+    // 1. Check explicit base branch (from PR metadata)
+    if (b.metadata?.baseBranch && nodes.has(b.metadata.baseBranch)) {
+      bestParent = nodes.get(b.metadata.baseBranch)!;
+      maxScore = bestParent.ahead || 0;
+    }
 
-      const isAncestor = bHistory.has(p.sha) || 
-                        (b.metadata?.baseBranch === p.name); // Match PR to its target branch
-
-      if (isAncestor && p.ahead > maxScore) {
-        maxScore = p.ahead;
-        bestParent = nodes.get(p.name)!;
+    // 2. Check history for better ancestors (branches that are part of this branch's history)
+    for (const sha of bHistory) {
+      const pNode = shaToNode.get(sha);
+      if (pNode && pNode.name !== b.name && pNode.type !== 'trunk') {
+        if (pNode.ahead > maxScore) {
+          maxScore = pNode.ahead;
+          bestParent = pNode;
+        }
       }
     }
 
@@ -59,6 +70,7 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     }
     bestParent.children.push(node);
   });
+
 
   return trunk;
 };

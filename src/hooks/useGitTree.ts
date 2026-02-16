@@ -180,19 +180,27 @@ export const useGitTree = () => {
     const cacheKey = `${cleanPath}/${mode}`;
     if (!forceRefresh) {
       const cached = getCache(cacheKey);
-      if (cached) {
+      if (cached && cached.items?.length > 0) {
         if (mode === 'branches') { setBranchData(cached); stateTracker.current.hasBranches = true; }
         else { setPrData(cached); stateTracker.current.hasPrs = true; }
         stateTracker.current.enrichedModes.add(mode);
         setGrowth(1); setError(null); setLoading(false);
+        // We still proceed if we think there might be more to fetch 
+        // but for now, cache is considered "complete" for the session
         return;
       }
     }
 
-    if (!forceRefresh && stateTracker.current.enrichedModes.has(mode)) {
-      if (mode === 'branches' && stateTracker.current.hasBranches) return;
-      if (mode === 'pr' && stateTracker.current.hasPrs) return;
+    // If we already have items in memory for this mode, and we aren't forcing, 
+    // we only proceed if we know there's more to fetch (hasMore flags)
+    const hasItems = mode === 'branches' ? branchData.items.length > 0 : prData.items.length > 0;
+    const isFullyFetched = mode === 'branches' ? stateTracker.current.hasBranches : stateTracker.current.hasPrs;
+
+    if (!forceRefresh && hasItems && isFullyFetched) {
+      console.log(`[useGitTree] Already have complete data for ${mode}, skipping fetch.`);
+      return;
     }
+
 
     setLoading(true); setError(null); setGrowth(0);
     cancelAnimationFrame(frameRef.current);
@@ -205,6 +213,8 @@ export const useGitTree = () => {
       let baseSha = '';
       let branchCursor: string | null = null;
       let prCursor: string | null = null;
+      
+      // We always check if we need more, even if we have some data
       let hasMoreBranches = !stateTracker.current.hasBranches;
       let hasMorePrs = !stateTracker.current.hasPrs;
       let pageCount = 0;
@@ -277,8 +287,9 @@ export const useGitTree = () => {
         }
       };
 
-      while ((hasMoreBranches || hasMorePrs) && pageCount < 10) {
-        const { data, errors } = await githubService.getBulkData(owner, repo, branchCursor, prCursor);
+      while ((hasMoreBranches || hasMorePrs) && pageCount < 50) {
+        console.log(`[useGitTree] Fetching page ${pageCount + 1}. Branches remaining: ${hasMoreBranches}, PRs remaining: ${hasMorePrs}`);
+        const { data, errors } = await githubService.getBulkData(owner, repo, branchCursor, prCursor, hasMoreBranches, hasMorePrs);
         if (errors) console.warn('[useGitTree] GraphQL partial errors:', errors);
         if (!data?.repository) throw new Error(errors?.[0]?.message || 'Repository not found');
 
@@ -291,8 +302,8 @@ export const useGitTree = () => {
         let newBranches: any[] = [];
         let newPRs: any[] = [];
 
-        if (hasMoreBranches) {
-          const nodes = repoData.refs?.nodes || [];
+        if (hasMoreBranches && repoData.refs) {
+          const nodes = repoData.refs.nodes || [];
           newBranches = nodes.map((b: any) => ({ 
             name: b.name, sha: b.target?.oid || '', ahead: 0, behind: 0, isBase: b.name === base,
             lastUpdated: b.target?.authoredDate,
@@ -305,13 +316,15 @@ export const useGitTree = () => {
             return { items: allItems, tree: parseBranchTree(mappedItems, base) };
           });
           
-          branchCursor = repoData.refs?.pageInfo?.endCursor || null;
-          hasMoreBranches = repoData.refs?.pageInfo?.hasNextPage || false;
-          stateTracker.current.hasBranches = true;
+          branchCursor = repoData.refs.pageInfo?.endCursor || null;
+          hasMoreBranches = repoData.refs.pageInfo?.hasNextPage || false;
+          if (!hasMoreBranches) stateTracker.current.hasBranches = true;
+          
+          console.log(`[useGitTree] Fetched ${newBranches.length} branches. Total: ${branchData.items.length + newBranches.length}. Has next: ${hasMoreBranches}`);
         }
 
-        if (hasMorePrs) {
-          const nodes = repoData.pullRequests?.nodes || [];
+        if (hasMorePrs && repoData.pullRequests) {
+          const nodes = repoData.pullRequests.nodes || [];
           newPRs = nodes.map((pr: any) => ({ 
             ...pr, html_url: pr.url, draft: pr.isDraft, 
             head: { ref: pr.headRefName, sha: pr.headRef?.target?.oid || '' },
@@ -331,9 +344,11 @@ export const useGitTree = () => {
             return { items: allPRs, tree: parseBranchTree(prNodes, base) };
           });
 
-          prCursor = repoData.pullRequests?.pageInfo?.endCursor || null;
-          hasMorePrs = repoData.pullRequests?.pageInfo?.hasNextPage || false;
-          stateTracker.current.hasPrs = true;
+          prCursor = repoData.pullRequests.pageInfo?.endCursor || null;
+          hasMorePrs = repoData.pullRequests.pageInfo?.hasNextPage || false;
+          if (!hasMorePrs) stateTracker.current.hasPrs = true;
+
+          console.log(`[useGitTree] Fetched ${newPRs.length} PRs. Total: ${prData.items.length + newPRs.length}. Has next: ${hasMorePrs}`);
         }
         
         animate();
@@ -344,7 +359,11 @@ export const useGitTree = () => {
         } else if (mode === 'pr' && newPRs.length > 0) {
           enrichItems(newPRs, base, baseSha, true);
         }
+
+        // Break if we are not fetching anything new in either list
+        if (!hasMoreBranches && !hasMorePrs) break;
       }
+
 
       if (fetchId === lastFetchId.current && !stateTracker.current.enrichedModes.has(mode)) {
         if (mode === 'branches' && branchData.items.length > 0) {

@@ -88,15 +88,15 @@ export const githubService = {
     }).then(res => res.json());
   },
 
-  getBulkData: async (owner: string, repo: string, branchCursor: string | null = null, prCursor: string | null = null) => {
+  getBulkData: async (owner: string, repo: string, branchCursor: string | null = null, prCursor: string | null = null, includeBranches = true, includePrs = true) => {
     const query = `
-      query($owner: String!, $repo: String!, $branchCursor: String, $prCursor: String) {
+      query($owner: String!, $repo: String!, $branchCursor: String, $prCursor: String, $includeBranches: Boolean!, $includePrs: Boolean!) {
         repository(owner: $owner, name: $repo) {
           defaultBranchRef { 
             name 
             target { ... on Commit { oid } }
           }
-          refs(refPrefix: "refs/heads/", first: 100, after: $branchCursor) {
+          refs(refPrefix: "refs/heads/", first: 100, after: $branchCursor) @include(if: $includeBranches) {
             pageInfo {
               hasNextPage
               endCursor
@@ -114,7 +114,7 @@ export const githubService = {
               }
             }
           }
-          pullRequests(first: 100, states: OPEN, after: $prCursor) {
+          pullRequests(first: 100, states: OPEN, after: $prCursor) @include(if: $includePrs) {
             pageInfo {
               hasNextPage
               endCursor
@@ -140,6 +140,6 @@ export const githubService = {
         }
       }
     `;
-    return githubService.graphql(query, { owner, repo, branchCursor, prCursor });
+    return githubService.graphql(query, { owner, repo, branchCursor, prCursor, includeBranches, includePrs });
   }
 };

@@ -25,7 +25,6 @@ export default function Home() {
   const [filterAuthor, setFilterAuthor] = useState<string | null>(null);
   const [isSidebarHover, setIsSidebarHover] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const [treeKey, setTreeKey] = useState(0); 
   const { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
   const isInitialized = useRef(false);
 
@@ -43,10 +42,6 @@ export default function Home() {
     };
     return findNode(tree);
   }, [tree, selectedNodeName]);
-
-  useEffect(() => {
-    if (tree) setTreeKey(prev => prev + 1);
-  }, [tree]);
 
   useEffect(() => {
     if (isInitialized.current) return;
@@ -75,22 +70,29 @@ export default function Home() {
   useEffect(() => {
     if (!isInitialized.current) return;
     const params = new URLSearchParams(window.location.search);
-    const prevMode = params.get('mode');
-    const prevRepo = params.get('repo');
+    const urlMode = params.get('mode');
+    const urlRepo = params.get('repo');
     
-    if (prevMode !== viewMode || prevRepo !== repoUrl) {
-      params.set('repo', repoUrl);
-      params.set('mode', viewMode);
-      window.history.pushState(null, '', `?${params.toString()}`);
+    // Update URL and storage when state changes
+    if (urlMode !== viewMode || urlRepo !== repoUrl) {
+      const newParams = new URLSearchParams();
+      newParams.set('repo', repoUrl);
+      newParams.set('mode', viewMode);
+      window.history.pushState(null, '', `?${newParams.toString()}`);
       sessionStorage.setItem('last_repo_url', repoUrl);
       sessionStorage.setItem('last_view_mode', viewMode);
       
-      // Auto-fetch ONLY if the mode changed on the same repository
-      if (prevMode !== viewMode && prevRepo === repoUrl) {
+      // Auto-fetch if switching to a mode that doesn't have data yet
+      const hasNoData = viewMode === 'branches' ? items.length === 0 : items.length === 0; 
+      // Note: items is derived from activeMode in useGitTree, so we check if it's empty
+      
+      if (urlRepo === repoUrl && urlMode !== viewMode) {
+        console.log(`[Page] Mode switched to ${viewMode}, triggering auto-fetch...`);
         fetchTree(repoUrl, viewMode);
       }
     }
-  }, [viewMode, repoUrl, fetchTree]);
+  }, [viewMode, repoUrl, fetchTree, items.length]);
+
 
   const handleFetch = useCallback(() => {
     setSelectedNodeName(null);
@@ -179,7 +181,6 @@ export default function Home() {
         {tree && !error ? (
           is3D ? (
             <ThreeVisualizer 
-              key={`3d-${treeKey}`}
               tree={tree} 
               hoveredNodeName={hoveredNodeName}
               filterAuthor={filterAuthor}
@@ -190,7 +191,6 @@ export default function Home() {
             />
           ) : (
             <Visualizer 
-              key={`2d-${treeKey}`}
               tree={tree} 
               hoveredNodeName={hoveredNodeName}
               filterAuthor={filterAuthor}
@@ -204,6 +204,7 @@ export default function Home() {
         ) : (
           <EmptyState loading={loading} error={error} />
         )}
+
       </div>
     </MainLayout>
   );
