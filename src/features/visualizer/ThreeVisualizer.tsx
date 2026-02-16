@@ -20,7 +20,6 @@ const TREE_LAYOUT = {
   trunkRadius: 16,
   minRadius: 2,
   branchBaseAngle: 0.6,
-  labelScaleBase: 250,
 };
 
 interface ThreeVisualizerProps {
@@ -46,14 +45,18 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  
   const nodesMap = useRef<Map<string, {
     mesh: THREE.Mesh;
-    tip?: THREE.Mesh;
+    tip: THREE.Mesh;
     label?: THREE.Sprite;
     node: VisualizerNode;
+    depth: number;
+    len: number;
+    group: THREE.Group;
   }>>(new Map());
-  const animatedGroupsRef = useRef<THREE.Group[]>([]);
-  const disposablesRef = useRef<(THREE.BufferGeometry | THREE.Material | THREE.Texture)[]>([]);
+  
+  const assetsRef = useRef<(THREE.BufferGeometry | THREE.Material | THREE.Texture)[]>([]);
 
   const getNodeStyles = (node: VisualizerNode, rootMeta: any, isHighlighted: boolean) => {
     let color = node.type === 'trunk' ? THEME.trunk : THEME.primary;
@@ -66,25 +69,50 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       if (!isHighlighted) emissiveIntensity = 0.3;
     } else if (node.hasConflicts) {
       color = THEME.conflict;
-    } else if (node.lastUpdated && rootMeta?.newestTimestamp) {
+    } else if (node.lastUpdated && rootMeta?.newestTimestamp && rootMeta?.oldestTimestamp) {
       const current = new Date(node.lastUpdated).getTime();
       const range = Math.max(rootMeta.newestTimestamp - rootMeta.oldestTimestamp, 1);
-      const ratio = Math.max(0, Math.min(1, (current - rootMeta.oldestTimestamp) / range));
+      const rawRatio = Math.max(0, Math.min(1, (current - rootMeta.oldestTimestamp) / range));
       
-      if (ratio > 0.8) {
-        color = '#60a5fa'; 
-        if (!isHighlighted) emissiveIntensity = 0.5;
+      // Use power to make the drop-off more dramatic (recent items stay bright, old fade fast)
+      const ratio = Math.pow(rawRatio, 2);
+      
+      if (ratio > 0.8) { 
+        color = '#22d3ee'; // Bright Cyan
+        emissiveIntensity = isHighlighted ? 0.8 : 0.5; 
       } 
-      else if (ratio > 0.6) color = '#3b82f6';
-      else if (ratio > 0.4) color = '#2563eb';
-      else if (ratio > 0.2) color = '#1d4ed8';
-      else color = '#172554';
+      else if (ratio > 0.5) color = '#3b82f6'; // Primary Blue
+      else if (ratio > 0.2) color = '#1e40af'; // Dim Dark Blue
+      else {
+        color = '#334155'; // Desaturated Slate for old branches
+        emissiveIntensity = isHighlighted ? 0.5 : 0;
+      }
     }
 
     if (isHighlighted) color = '#ffffff';
-    if (node.isMerged && !isHighlighted) color = '#1e293b';
+    // isMerged now handled via opacity in the caller, not color override
 
     return { color, emissiveIntensity };
+  };
+
+  const createLabel = (name: string, depth: number, len: number): { sprite: THREE.Sprite, assets: any[] } => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = 256; canvas.height = 64; 
+    ctx.fillStyle = THEME.text;
+    ctx.font = `bold ${Math.max(24, 40 - depth * 6)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(name, 128, 32);
+    
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.8 });
+    const sprite = new THREE.Sprite(mat);
+    const scale = Math.max(120, 200 - depth * 40);
+    sprite.position.set(0, len + 25, 0);
+    sprite.scale.set(scale, scale / 4, 1);
+    sprite.userData = { baseScale: scale, depth };
+    
+    return { sprite, assets: [tex, mat] };
   };
 
   useEffect(() => {
@@ -100,7 +128,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -166,43 +194,37 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       group.add(mesh);
       assets.push(geo, mat);
 
-      let tip: THREE.Mesh | undefined;
+      const tipGeo = new THREE.SphereGeometry(15, 12, 12);
+      const tipMat = new THREE.MeshStandardMaterial({ 
+        color, 
+        emissive: color, 
+        emissiveIntensity, 
+        transparent: true 
+      });
+      const tip = new THREE.Mesh(tipGeo, tipMat);
+      tip.position.set(0, len, 0);
+      tip.userData = { node };
+      group.add(tip);
+      assets.push(tipGeo, tipMat);
+
       let label: THREE.Sprite | undefined;
-
       if (!isTrunk) {
-        const tipGeo = new THREE.SphereGeometry(15, 12, 12);
-        const tipMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity, transparent: true });
-        tip = new THREE.Mesh(tipGeo, tipMat);
-        tip.position.set(0, len, 0);
-        tip.userData = { node };
-        group.add(tip);
-        assets.push(tipGeo, tipMat);
-
         if (node.fileTree) {
           const garden = buildFileGarden(node.fileTree);
           garden.position.set(0, len, 0);
           group.add(garden);
         }
 
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
-        canvas.width = 256; canvas.height = 64; 
-        ctx.fillStyle = THEME.text;
-        ctx.font = `bold ${Math.max(24, 40 - depth * 6)}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.fillText(node.name, 128, 32);
-        const tex = new THREE.CanvasTexture(canvas);
-        const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.8, visible: depth <= 2 });
-        label = new THREE.Sprite(spriteMat);
-        const scale = Math.max(120, 200 - depth * 40);
-        label.position.set(0, len + 25, 0);
-        label.scale.set(scale, scale / 4, 1);
-        label.userData = { baseScale: scale, depth };
-        group.add(label);
-        assets.push(tex, spriteMat);
+        // LOD: Only create labels for top levels initially to save VRAM
+        if (depth <= 1) {
+          const { sprite, assets: labelAssets } = createLabel(node.name, depth, len);
+          label = sprite;
+          group.add(label);
+          assets.push(...labelAssets);
+        }
       }
 
-      nodesMap.current.set(node.name, { mesh, tip, label, node });
+      nodesMap.current.set(node.name, { mesh, tip, label, node, depth, len, group });
 
       const children = node.children || [];
       const meta = rootMeta || tree.metadata;
@@ -225,8 +247,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     const root = buildBranch(tree);
     root.position.y = -600;
     scene.add(root);
-    animatedGroupsRef.current = animGroups;
-    disposablesRef.current = assets;
+    assetsRef.current = assets;
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -271,10 +292,23 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     container.addEventListener('mouseup', onUp);
 
     let frame: number;
+    const v1 = new THREE.Vector3();
     const animate = (time: number) => {
       frame = requestAnimationFrame(animate);
       const t = time * 0.001;
       animGroups.forEach((g, i) => { g.rotation.x = Math.sin(t + i) * 0.015; });
+      
+      // Distance-based LOD for labels
+      const camPos = camera.position;
+      nodesMap.current.forEach((data) => {
+        if (data.label) {
+          const dist = data.mesh.getWorldPosition(v1).distanceTo(camPos);
+          const isHigh = hoveredNodeName === data.node.name;
+          // Hide top-level labels if too far, unless hovered
+          data.label.visible = isHigh || (dist < 2500 && !isDimmed);
+        }
+      });
+
       controls.update();
       renderer.render(scene, camera);
     };
@@ -299,35 +333,35 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     };
   }, [tree]);
 
-
-  // --- Dynamic Updates ---
   useEffect(() => {
-    if (!sceneRef.current) return;
-        nodesMap.current.forEach((data, name) => {
-          const { mesh, tip, label, node } = data;
-          const isHighlighted = !!(hoveredNodeName === name || (filterAuthor && node.author?.login === filterAuthor));
-          const isOtherHighlighted = !!((hoveredNodeName && hoveredNodeName !== name) || (filterAuthor && node.author?.login !== filterAuthor));
-          const { color, emissiveIntensity } = getNodeStyles(node, tree.metadata, isHighlighted);
-          const meshMat = mesh.material as THREE.MeshStandardMaterial;
-      meshMat.color.set(color);
-      meshMat.opacity = (isOtherHighlighted && isDimmed) ? 0.05 : (node.isMerged && !isHighlighted ? 0.3 : 1);
+    nodesMap.current.forEach((data, name) => {
+      const { mesh, tip, node, depth, len, group } = data;
+      const isHigh = !!(hoveredNodeName === name || (filterAuthor && node.author?.login === filterAuthor));
+      const isOtherHigh = !!((hoveredNodeName && hoveredNodeName !== name) || (filterAuthor && node.author?.login !== filterAuthor));
+      const { color, emissiveIntensity } = getNodeStyles(node, tree.metadata, isHigh);
       
-      if (tip) {
-        const tipMat = tip.material as THREE.MeshStandardMaterial;
-        tipMat.color.set(color);
-        tipMat.emissive.set(color);
-        tipMat.emissiveIntensity = (isOtherHighlighted && isDimmed) ? 0 : emissiveIntensity;
-        tipMat.opacity = (isOtherHighlighted && isDimmed) ? 0.05 : 1;
-        const s = isHighlighted ? 1.6 : 1;
-        tip.scale.set(s, s, s);
+      (mesh.material as THREE.MeshStandardMaterial).color.set(color);
+      (mesh.material as THREE.MeshStandardMaterial).opacity = (isOtherHigh && isDimmed) ? 0.05 : (node.isMerged && !isHigh ? 0.3 : 1);
+      
+      (tip.material as THREE.MeshStandardMaterial).color.set(color);
+      (tip.material as THREE.MeshStandardMaterial).emissive.set(color);
+      (tip.material as THREE.MeshStandardMaterial).emissiveIntensity = (isOtherHigh && isDimmed) ? 0 : emissiveIntensity;
+      (tip.material as THREE.MeshStandardMaterial).opacity = (isOtherHigh && isDimmed) ? 0.05 : 1;
+      tip.scale.set(isHigh ? 1.6 : 1, isHigh ? 1.6 : 1, isHigh ? 1.6 : 1);
+
+      // Dynamically create label for hovered node if it doesn't exist
+      if (isHigh && !data.label) {
+        const { sprite, assets: labelAssets } = createLabel(node.name, depth, len);
+        data.label = sprite;
+        group.add(sprite);
+        assetsRef.current.push(...labelAssets);
       }
-      if (label) {
-        const labelMat = label.material as THREE.SpriteMaterial;
-        labelMat.visible = isHighlighted || (!isDimmed && label.userData.depth <= 2);
-        labelMat.opacity = isHighlighted ? 1 : 0.8;
-        label.renderOrder = isHighlighted ? 999 : 0;
-        const scale = isHighlighted ? 300 : label.userData.baseScale;
-        label.scale.set(scale, scale / 4, 1);
+
+      if (data.label) {
+        data.label.material.opacity = isHigh ? 1 : 0.8;
+        data.label.renderOrder = isHigh ? 999 : 0;
+        const scale = isHigh ? 300 : data.label.userData.baseScale;
+        data.label.scale.set(scale, scale / 4, 1);
       }
     });
   }, [hoveredNodeName, filterAuthor, isDimmed, tree.metadata]);

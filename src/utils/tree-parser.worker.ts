@@ -21,15 +21,14 @@ const parseBranchTree = (branches: GitBranch[], defaultBranch: string): Visualiz
     .map(b => b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0)
     .filter(t => t > 0);
     
-  const prevMeta = trunk.metadata || {};
   const newest = timestamps.length ? Math.max(...timestamps) : Date.now();
   const oldest = timestamps.length ? Math.min(...timestamps) : Date.now() - (30 * 24 * 60 * 60 * 1000);
 
   trunk.metadata = {
-    maxBehind: Math.max(...branches.map(b => b.behind), 1),
-    maxAhead: Math.max(...branches.map(b => b.ahead), 1),
-    newestTimestamp: prevMeta.newestTimestamp ? Math.max(prevMeta.newestTimestamp, newest) : newest,
-    oldestTimestamp: prevMeta.oldestTimestamp ? Math.min(prevMeta.oldestTimestamp, oldest) : oldest
+    maxBehind: Math.max(...branches.map(b => b.behind || 0), 1),
+    maxAhead: Math.max(...branches.map(b => b.ahead || 0), 1),
+    newestTimestamp: newest,
+    oldestTimestamp: oldest
   };
 
   branches.forEach(b => {
