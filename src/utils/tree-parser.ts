@@ -32,17 +32,11 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     oldestTimestamp: prevMeta.oldestTimestamp ? Math.min(prevMeta.oldestTimestamp, currentOldest) : currentOldest
   };
 
-  const shaToNode = new Map<string, VisualizerNode>();
-  branches.forEach(b => {
-    const node = nodes.get(b.name)!;
-    if (b.sha) shaToNode.set(b.sha, node);
-  });
-
   branches.forEach(b => {
     if (b.name === defaultBranch) return;
 
     const node = nodes.get(b.name)!;
-    const bHistory = b.history || [];
+    const bHistory = new Set(b.history || []);
     let bestParent = trunk;
     let maxScore = -1;
 
@@ -52,14 +46,15 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
       maxScore = bestParent.ahead || 0;
     }
 
-    // 2. Check history for better ancestors (branches that are part of this branch's history)
-    for (const sha of bHistory) {
-      const pNode = shaToNode.get(sha);
-      if (pNode && pNode.name !== b.name && pNode.type !== 'trunk') {
-        if (pNode.ahead > maxScore) {
-          maxScore = pNode.ahead;
-          bestParent = pNode;
-        }
+    // 2. Search for the best ancestor among all other branches
+    for (const p of branches) {
+      if (p.name === b.name || p.name === defaultBranch) continue;
+      
+      const isAncestor = (p.sha && bHistory.has(p.sha)) || (b.metadata?.baseBranch === p.name);
+      
+      if (isAncestor && p.ahead > maxScore) {
+        maxScore = p.ahead;
+        bestParent = nodes.get(p.name)!;
       }
     }
 
@@ -70,6 +65,7 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     }
     bestParent.children.push(node);
   });
+
 
 
   return trunk;

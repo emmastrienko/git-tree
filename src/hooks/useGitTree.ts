@@ -60,6 +60,16 @@ const getCache = (key: string) => {
   } catch { return null; }
 };
 
+// Singleton worker for tree parsing
+let treeWorker: Worker | null = null;
+const getWorker = () => {
+  if (typeof window === 'undefined') return null;
+  if (!treeWorker) {
+    treeWorker = new Worker(new URL('../utils/tree-parser.worker.ts', import.meta.url));
+  }
+  return treeWorker;
+};
+
 export const useGitTree = () => {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -69,9 +79,14 @@ export const useGitTree = () => {
   const [branchData, setBranchData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
   const [prData, setPrData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
   
+  // Refs to avoid stale closures during long-running fetch operations
+  const branchItemsRef = useRef<any[]>([]);
+  const prItemsRef = useRef<any[]>([]);
+
   const frameRef = useRef<number>(0);
   const fetchingNodes = useRef<Set<string>>(new Set());
   const lastFetchId = useRef<number>(0);
+  const parsingRequestId = useRef<number>(0);
   const currentModeRef = useRef<ViewMode>('branches');
   const [activeMode, setActiveMode] = useState<ViewMode>('branches');
   
@@ -84,6 +99,39 @@ export const useGitTree = () => {
 
   const tree = activeMode === 'branches' ? branchData.tree : prData.tree;
   const items = activeMode === 'branches' ? branchData.items : prData.items;
+
+  // Sync refs with state when state changes (e.g. from manual clear or cache load)
+  useEffect(() => {
+    branchItemsRef.current = branchData.items;
+  }, [branchData.items]);
+
+  useEffect(() => {
+    prItemsRef.current = prData.items;
+  }, [prData.items]);
+
+  // Async tree parsing helper
+  const parseTreeAsync = useCallback((branches: GitBranch[], defaultBranch: string) => {
+    return new Promise<VisualizerNode>((resolve, reject) => {
+      const worker = getWorker();
+      if (!worker) {
+        // Fallback to sync parsing if worker fails to init
+        resolve(parseBranchTree(branches, defaultBranch));
+        return;
+      }
+
+      const requestId = ++parsingRequestId.current;
+      const handleMessage = (e: MessageEvent) => {
+        if (e.data.requestId === requestId) {
+          worker.removeEventListener('message', handleMessage);
+          if (e.data.error) reject(new Error(e.data.error));
+          else resolve(e.data.tree);
+        }
+      };
+
+      worker.addEventListener('message', handleMessage);
+      worker.postMessage({ branches, defaultBranch, requestId });
+    });
+  }, []);
 
   const animate = useCallback(() => {
     setGrowth(prev => {
@@ -246,38 +294,43 @@ export const useGitTree = () => {
               const { results } = await githubService.compareBatch(owner, repo, currentBaseSha, headShas);
               if (fetchId !== lastFetchId.current) return;
 
-              const updateFn = (prev: {tree: VisualizerNode | null, items: any[]}) => {
-                const newItems = [...prev.items];
-                results?.forEach((res: any) => {
-                  if (res.success) {
-                    const idx = newItems.findIndex(item => (isPrMode ? item.head?.sha : item.sha) === res.head);
-                    if (idx !== -1) {
-                      newItems[idx] = { 
-                        ...newItems[idx], 
-                        ahead: res.data.ahead_by, behind: res.data.behind_by, 
-                        history: res.data.commits?.map((c: any) => c.sha) || [],
-                        isMerged: res.data.status === 'identical' || res.data.status === 'behind'
-                      };
-                    }
+              // Use refs to get the absolute latest state
+              const currentItems = isPrMode ? prItemsRef.current : branchItemsRef.current;
+              const newItems = [...currentItems];
+              
+              results?.forEach((res: any) => {
+                if (res.success) {
+                  const idx = newItems.findIndex(item => (isPrMode ? item.head?.sha : item.sha) === res.head);
+                  if (idx !== -1) {
+                    newItems[idx] = { 
+                      ...newItems[idx], 
+                      ahead: res.data.ahead_by, behind: res.data.behind_by, 
+                      history: res.data.commits?.map((c: any) => c.sha) || [],
+                      isMerged: res.data.status === 'identical' || res.data.status === 'behind'
+                    };
                   }
-                });
+                }
+              });
 
-                const nodesToParse = isPrMode 
-                  ? newItems.map(pr => ({ 
-                      name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead, behind: pr.behind, 
-                      history: pr.history, lastUpdated: pr.lastUpdated, author: pr.author, 
-                      mergeBaseSha: pr.baseRefName === currentBase ? undefined : pr.baseRefName, 
-                      metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName } 
-                    } as any))
-                  : newItems;
+              const nodesToParse = isPrMode 
+                ? newItems.map(pr => ({ 
+                    name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead, behind: pr.behind, 
+                    history: pr.history, lastUpdated: pr.lastUpdated, author: pr.author, 
+                    mergeBaseSha: pr.baseRefName === currentBase ? undefined : pr.baseRefName, 
+                    metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName } 
+                  } as any))
+                : newItems;
 
-                const newTree = parseBranchTree(nodesToParse, currentBase);
-                if (newItems.length > 0 && newTree) setCache(`${cleanPath}/${isPrMode ? 'pr' : 'branches'}`, { items: newItems, tree: newTree });
-                return { items: newItems, tree: newTree };
-              };
-
-              if (!isPrMode) setBranchData(updateFn);
-              else setPrData(updateFn);
+              const newTree = await parseTreeAsync(nodesToParse, currentBase);
+              if (newItems.length > 0 && newTree) setCache(`${cleanPath}/${isPrMode ? 'pr' : 'branches'}`, { items: newItems, tree: newTree });
+              
+              if (isPrMode) {
+                prItemsRef.current = newItems;
+                setPrData({ items: newItems, tree: newTree });
+              } else {
+                branchItemsRef.current = newItems;
+                setBranchData({ items: newItems, tree: newTree });
+              }
               
               stateTracker.current.enrichedModes.add(isPrMode ? 'pr' : 'branches');
             }
@@ -288,7 +341,6 @@ export const useGitTree = () => {
       };
 
       while ((hasMoreBranches || hasMorePrs) && pageCount < 50) {
-        console.log(`[useGitTree] Fetching page ${pageCount + 1}. Branches remaining: ${hasMoreBranches}, PRs remaining: ${hasMorePrs}`);
         const { data, errors } = await githubService.getBulkData(owner, repo, branchCursor, prCursor, hasMoreBranches, hasMorePrs);
         if (errors) console.warn('[useGitTree] GraphQL partial errors:', errors);
         if (!data?.repository) throw new Error(errors?.[0]?.message || 'Repository not found');
@@ -310,17 +362,15 @@ export const useGitTree = () => {
             author: b.target?.author?.user ? { login: b.target.author.user.login, avatarUrl: b.target.author.user.avatarUrl } : undefined
           }));
           
-          setBranchData(prev => {
-            const allItems = [...prev.items, ...newBranches];
-            const mappedItems: GitBranch[] = allItems.map(b => ({ ...b, history: b.history || [] }));
-            return { items: allItems, tree: parseBranchTree(mappedItems, base) };
-          });
+          const allItems = [...branchItemsRef.current, ...newBranches];
+          branchItemsRef.current = allItems;
+          const mappedItems: GitBranch[] = allItems.map(b => ({ ...b, history: b.history || [] }));
+          const newTree = await parseTreeAsync(mappedItems, base);
+          setBranchData({ items: allItems, tree: newTree });
           
           branchCursor = repoData.refs.pageInfo?.endCursor || null;
           hasMoreBranches = repoData.refs.pageInfo?.hasNextPage || false;
           if (!hasMoreBranches) stateTracker.current.hasBranches = true;
-          
-          console.log(`[useGitTree] Fetched ${newBranches.length} branches. Total: ${branchData.items.length + newBranches.length}. Has next: ${hasMoreBranches}`);
         }
 
         if (hasMorePrs && repoData.pullRequests) {
@@ -333,23 +383,24 @@ export const useGitTree = () => {
             author: pr.author ? { login: pr.author.login, avatarUrl: pr.author.avatarUrl } : undefined
           }));
 
-          setPrData(prev => {
-            const allPRs = [...prev.items, ...newPRs];
-            const prNodes: GitBranch[] = allPRs.map((pr: any) => ({ 
-              name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead || 0, behind: pr.behind || 0, 
-              history: pr.history || [], lastUpdated: pr.lastUpdated, author: pr.author, 
-              mergeBaseSha: pr.baseRefName === base ? undefined : pr.baseRefName, 
-              metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.baseRefName } 
-            } as any));
-            return { items: allPRs, tree: parseBranchTree(prNodes, base) };
-          });
+          const allPRs = [...prItemsRef.current, ...newPRs];
+          prItemsRef.current = allPRs;
+          const prNodes: GitBranch[] = allPRs.map((pr: any) => ({ 
+            name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead || 0, behind: pr.behind || 0, 
+            history: pr.history || [], lastUpdated: pr.lastUpdated, author: pr.author, 
+            mergeBaseSha: pr.baseRefName === base ? undefined : pr.baseRefName, 
+            metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.baseRefName } 
+          } as any));
+          
+          const newTree = await parseTreeAsync(prNodes, base);
+          setPrData({ items: allPRs, tree: newTree });
 
           prCursor = repoData.pullRequests.pageInfo?.endCursor || null;
           hasMorePrs = repoData.pullRequests.pageInfo?.hasNextPage || false;
           if (!hasMorePrs) stateTracker.current.hasPrs = true;
-
-          console.log(`[useGitTree] Fetched ${newPRs.length} PRs. Total: ${prData.items.length + newPRs.length}. Has next: ${hasMorePrs}`);
         }
+
+
         
         animate();
         pageCount++;
