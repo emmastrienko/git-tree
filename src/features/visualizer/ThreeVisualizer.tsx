@@ -303,13 +303,12 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
   // --- Dynamic Updates ---
   useEffect(() => {
     if (!sceneRef.current) return;
-    nodesMap.current.forEach((data, name) => {
-      const { mesh, tip, label, node } = data;
-      const isHighlighted = hoveredNodeName === name || (filterAuthor && node.author?.login === filterAuthor);
-      const isOtherHighlighted = (hoveredNodeName && hoveredNodeName !== name) || (filterAuthor && node.author?.login !== filterAuthor);
-      const { color, emissiveIntensity } = getNodeStyles(node, tree.metadata, isHighlighted);
-      
-      const meshMat = mesh.material as THREE.MeshStandardMaterial;
+        nodesMap.current.forEach((data, name) => {
+          const { mesh, tip, label, node } = data;
+          const isHighlighted = !!(hoveredNodeName === name || (filterAuthor && node.author?.login === filterAuthor));
+          const isOtherHighlighted = !!((hoveredNodeName && hoveredNodeName !== name) || (filterAuthor && node.author?.login !== filterAuthor));
+          const { color, emissiveIntensity } = getNodeStyles(node, tree.metadata, isHighlighted);
+          const meshMat = mesh.material as THREE.MeshStandardMaterial;
       meshMat.color.set(color);
       meshMat.opacity = (isOtherHighlighted && isDimmed) ? 0.05 : (node.isMerged && !isHighlighted ? 0.3 : 1);
       
