@@ -94,8 +94,10 @@ export const useGitTree = () => {
     repo: string | null,
     hasBranches: boolean,
     hasPrs: boolean,
-    enrichedModes: Set<ViewMode>
-  }>({ repo: null, hasBranches: false, hasPrs: false, enrichedModes: new Set() });
+    enrichedModes: Set<ViewMode>,
+    base: string | null,
+    baseSha: string | null
+  }>({ repo: null, hasBranches: false, hasPrs: false, enrichedModes: new Set(), base: null, baseSha: null });
 
   const tree = activeMode === 'branches' ? branchData.tree : prData.tree;
   const items = activeMode === 'branches' ? branchData.items : prData.items;
@@ -220,6 +222,8 @@ export const useGitTree = () => {
       stateTracker.current.hasBranches = false;
       stateTracker.current.hasPrs = false;
       stateTracker.current.enrichedModes.clear();
+      stateTracker.current.base = null;
+      stateTracker.current.baseSha = null;
     }
 
     const [owner, repo] = cleanPath.split('/');
@@ -243,8 +247,9 @@ export const useGitTree = () => {
     // we only proceed if we know there's more to fetch (hasMore flags)
     const hasItems = mode === 'branches' ? branchData.items.length > 0 : prData.items.length > 0;
     const isFullyFetched = mode === 'branches' ? stateTracker.current.hasBranches : stateTracker.current.hasPrs;
+    const isEnriched = stateTracker.current.enrichedModes.has(mode);
 
-    if (!forceRefresh && hasItems && isFullyFetched) {
+    if (!forceRefresh && hasItems && isFullyFetched && isEnriched) {
       console.log(`[useGitTree] Already have complete data for ${mode}, skipping fetch.`);
       return;
     }
@@ -253,18 +258,32 @@ export const useGitTree = () => {
     setLoading(true); setError(null); setGrowth(0);
     cancelAnimationFrame(frameRef.current);
 
-    if (!stateTracker.current.hasBranches && mode === 'branches') setBranchData({ tree: null, items: [] });
-    if (!stateTracker.current.hasPrs && mode === 'pr') setPrData({ tree: null, items: [] });
+    // If we need a refresh or don't have items, clear and reset flags for THIS mode
+    const needsBranches = mode === 'branches' && (forceRefresh || branchItemsRef.current.length === 0);
+    const needsPrs = mode === 'pr' && (forceRefresh || prItemsRef.current.length === 0);
+
+    if (needsBranches) {
+      setBranchData({ tree: null, items: [] });
+      branchItemsRef.current = [];
+      stateTracker.current.hasBranches = false;
+      stateTracker.current.enrichedModes.delete('branches');
+    }
+    if (needsPrs) {
+      setPrData({ tree: null, items: [] });
+      prItemsRef.current = [];
+      stateTracker.current.hasPrs = false;
+      stateTracker.current.enrichedModes.delete('pr');
+    }
 
     try {
-      let base = 'main';
-      let baseSha = '';
+      let base = stateTracker.current.base || 'main';
+      let baseSha = stateTracker.current.baseSha || '';
       let branchCursor: string | null = null;
       let prCursor: string | null = null;
       
-      // We always check if we need more, even if we have some data
-      let hasMoreBranches = !stateTracker.current.hasBranches;
-      let hasMorePrs = !stateTracker.current.hasPrs;
+      // We only fetch what we need and haven't fully fetched yet
+      let hasMoreBranches = needsBranches || (!stateTracker.current.hasBranches && mode === 'branches');
+      let hasMorePrs = needsPrs || (!stateTracker.current.hasPrs && mode === 'pr');
       let pageCount = 0;
 
       const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
@@ -273,6 +292,10 @@ export const useGitTree = () => {
       const enrichItems = async (itemsToEnrich: any[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
         setSyncing(true);
         try {
+          if (!currentBaseSha) {
+            console.warn('[useGitTree] No baseSha available for enrichment.');
+            return;
+          }
           for (let i = 0; i < itemsToEnrich.length; i += 20) {
             if (fetchId !== lastFetchId.current) return;
             const chunk = itemsToEnrich.slice(i, i + 20);
@@ -317,7 +340,7 @@ export const useGitTree = () => {
                     name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead, behind: pr.behind, 
                     history: pr.history, lastUpdated: pr.lastUpdated, author: pr.author, 
                     mergeBaseSha: pr.baseRefName === currentBase ? undefined : pr.baseRefName, 
-                    metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName } 
+                    metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
                   } as any))
                 : newItems;
 
@@ -349,6 +372,8 @@ export const useGitTree = () => {
         if (pageCount === 0) {
           base = repoData.defaultBranchRef?.name || 'main';
           baseSha = repoData.defaultBranchRef?.target?.oid || '';
+          stateTracker.current.base = base;
+          stateTracker.current.baseSha = baseSha;
         }
 
         let newBranches: any[] = [];
@@ -389,7 +414,7 @@ export const useGitTree = () => {
             name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead || 0, behind: pr.behind || 0, 
             history: pr.history || [], lastUpdated: pr.lastUpdated, author: pr.author, 
             mergeBaseSha: pr.baseRefName === base ? undefined : pr.baseRefName, 
-            metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.baseRefName } 
+            metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
           } as any));
           
           const newTree = await parseTreeAsync(prNodes, base);
@@ -417,10 +442,9 @@ export const useGitTree = () => {
 
 
       if (fetchId === lastFetchId.current && !stateTracker.current.enrichedModes.has(mode)) {
-        if (mode === 'branches' && branchData.items.length > 0) {
-          enrichItems(branchData.items, base, baseSha, false);
-        } else if (mode === 'pr' && prData.items.length > 0) {
-          enrichItems(prData.items, base, baseSha, true);
+        const currentItems = mode === 'branches' ? branchItemsRef.current : prItemsRef.current;
+        if (currentItems.length > 0) {
+          enrichItems(currentItems, base, baseSha, mode === 'pr');
         }
       }
 
@@ -433,7 +457,7 @@ export const useGitTree = () => {
     } finally {
       if (fetchId === lastFetchId.current) setLoading(false);
     }
-  }, [animate, branchData.items, prData.items]);
+  }, [animate, parseTreeAsync]);
 
   return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
 };

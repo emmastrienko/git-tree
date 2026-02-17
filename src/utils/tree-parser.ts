@@ -2,15 +2,25 @@ import { GitBranch, VisualizerNode } from '@/types';
 
 export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): VisualizerNode => {
   const nodes = new Map<string, VisualizerNode>();
+  const branchToNodeName = new Map<string, string>();
   
-  branches.forEach(b => nodes.set(b.name, {
-    ...b,
-    type: b.name === defaultBranch ? 'trunk' : 'branch',
-    children: []
-  }));
+  branches.forEach(b => {
+    nodes.set(b.name, {
+      ...b,
+      type: b.name === defaultBranch ? 'trunk' : 'branch',
+      children: []
+    });
+    // For PRs, metadata.headBranch is the actual branch name
+    if (b.metadata?.headBranch) {
+      branchToNodeName.set(b.metadata.headBranch, b.name);
+    } else {
+      branchToNodeName.set(b.name, b.name);
+    }
+  });
 
   if (!nodes.has(defaultBranch)) {
     nodes.set(defaultBranch, { name: defaultBranch, type: 'trunk', sha: '', ahead: 0, behind: 0, children: [] });
+    branchToNodeName.set(defaultBranch, defaultBranch);
   }
 
   const trunk = nodes.get(defaultBranch)!;
@@ -40,21 +50,32 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     let bestParent = trunk;
     let maxScore = -1;
 
-    // 1. Check explicit base branch (from PR metadata)
-    if (b.metadata?.baseBranch && nodes.has(b.metadata.baseBranch)) {
-      bestParent = nodes.get(b.metadata.baseBranch)!;
-      maxScore = bestParent.ahead || 0;
+    // Check explicit base branch (from PR metadata)
+    if (b.metadata?.baseBranch) {
+      if (b.metadata.baseBranch === defaultBranch) {
+        bestParent = trunk;
+        maxScore = Infinity; // Explicitly target default branch
+      } else {
+        const parentNodeName = branchToNodeName.get(b.metadata.baseBranch);
+        if (parentNodeName && nodes.has(parentNodeName)) {
+          bestParent = nodes.get(parentNodeName)!;
+          maxScore = bestParent.ahead || 0;
+        }
+      }
     }
 
-    // 2. Search for the best ancestor among all other branches
-    for (const p of branches) {
-      if (p.name === b.name || p.name === defaultBranch) continue;
-      
-      const isAncestor = (p.sha && bHistory.has(p.sha)) || (b.metadata?.baseBranch === p.name);
-      
-      if (isAncestor && p.ahead > maxScore) {
-        maxScore = p.ahead;
-        bestParent = nodes.get(p.name)!;
+    // Search for the best ancestor among all other branches
+    // Only search if we haven't already found an explicit parent that is the trunk
+    if (maxScore !== Infinity) {
+      for (const p of branches) {
+        if (p.name === b.name || p.name === defaultBranch) continue;
+        
+        const isAncestor = (p.sha && bHistory.has(p.sha)) || (b.metadata?.baseBranch === (p.metadata?.headBranch || p.name));
+        
+        if (isAncestor && p.ahead > maxScore) {
+          maxScore = p.ahead;
+          bestParent = nodes.get(p.name)!;
+        }
       }
     }
 

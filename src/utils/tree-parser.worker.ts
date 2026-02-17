@@ -2,6 +2,7 @@ import { GitBranch, VisualizerNode } from '../types';
 
 const parseBranchTree = (branches: GitBranch[], defaultBranch: string): VisualizerNode => {
   const nodes: Record<string, VisualizerNode> = {};
+  const branchToNodeName: Record<string, string> = {};
   
   branches.forEach(b => {
     nodes[b.name] = {
@@ -9,10 +10,17 @@ const parseBranchTree = (branches: GitBranch[], defaultBranch: string): Visualiz
       type: b.name === defaultBranch ? 'trunk' : 'branch',
       children: []
     };
+    
+    if (b.metadata?.headBranch) {
+      branchToNodeName[b.metadata.headBranch] = b.name;
+    } else {
+      branchToNodeName[b.name] = b.name;
+    }
   });
 
   if (!nodes[defaultBranch]) {
     nodes[defaultBranch] = { name: defaultBranch, type: 'trunk', sha: '', ahead: 0, behind: 0, children: [] };
+    branchToNodeName[defaultBranch] = defaultBranch;
   }
 
   const trunk = nodes[defaultBranch];
@@ -40,18 +48,28 @@ const parseBranchTree = (branches: GitBranch[], defaultBranch: string): Visualiz
     let maxScore = -1;
 
     // PR target branch takes precedence
-    if (b.metadata?.baseBranch && nodes[b.metadata.baseBranch]) {
-      bestParent = nodes[b.metadata.baseBranch];
-      maxScore = bestParent.ahead || 0;
+    if (b.metadata?.baseBranch) {
+      if (b.metadata.baseBranch === defaultBranch) {
+        bestParent = trunk;
+        maxScore = Infinity; // Explicitly target default branch
+      } else {
+        const parentNodeName = branchToNodeName[b.metadata.baseBranch];
+        if (parentNodeName && nodes[parentNodeName]) {
+          bestParent = nodes[parentNodeName];
+          maxScore = bestParent.ahead || 0;
+        }
+      }
     }
 
-    for (const p of branches) {
-      if (p.name === b.name || p.name === defaultBranch) continue;
-      
-      const isAncestor = (p.sha && history.has(p.sha)) || (b.metadata?.baseBranch === p.name);
-      if (isAncestor && (p.ahead || 0) > maxScore) {
-        maxScore = p.ahead || 0;
-        bestParent = nodes[p.name];
+    if (maxScore !== Infinity) {
+      for (const p of branches) {
+        if (p.name === b.name || p.name === defaultBranch) continue;
+        
+        const isAncestor = (p.sha && history.has(p.sha)) || (b.metadata?.baseBranch === (p.metadata?.headBranch || p.name));
+        if (isAncestor && (p.ahead || 0) > maxScore) {
+          maxScore = p.ahead || 0;
+          bestParent = nodes[p.name];
+        }
       }
     }
 

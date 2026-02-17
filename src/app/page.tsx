@@ -91,7 +91,7 @@ export default function Home() {
         fetchTree(repoUrl, viewMode);
       }
     }
-  }, [viewMode, repoUrl, fetchTree, items.length]);
+  }, [viewMode, repoUrl]);
 
 
   const handleFetch = useCallback(() => {
