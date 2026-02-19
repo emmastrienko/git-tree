@@ -1,94 +1,38 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { githubService } from '@/services/github';
-import { parseBranchTree, parseFileTree } from '@/utils/tree-parser';
+import { parseFileTree } from '@/utils/tree-parser';
 import { GitBranch, ViewMode, VisualizerNode } from '@/types';
+import { 
+  ENRICH_CHUNK_SIZE, 
+  MAX_FETCH_PAGES, 
+  TWO_YEARS_MS 
+} from '@/constants';
 
-const CACHE_PREFIX = 'git_viz_';
-
-const pruneCache = () => {
-  try {
-    const keys = Object.keys(sessionStorage).filter(k => k.startsWith(CACHE_PREFIX));
-    keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => sessionStorage.removeItem(k));
-  } catch (e) {
-    sessionStorage.clear();
-  }
-};
-
-const setCache = (key: string, value: any) => {
-  if (typeof window === 'undefined') return;
-  
-  const minimizedValue = {
-    ...value,
-    items: value.items.map((item: any) => ({
-      id: item.id,
-      number: item.number,
-      title: item.title,
-      name: item.name,
-      state: item.state,
-      draft: item.draft,
-      html_url: item.html_url,
-      ahead: item.ahead,
-      behind: item.behind,
-      history: item.history,
-      review_status: item.review_status,
-      lastUpdated: item.lastUpdated,
-      author: item.author,
-      user: item.user ? { login: item.user.login, avatar_url: item.user.avatar_url } : undefined,
-      head: item.head ? { ref: item.head.ref, sha: item.head.sha } : undefined
-    }))
-  };
-
-  try {
-    sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
-  } catch (e) {
-    if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-      pruneCache();
-      try {
-        sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
-      } catch {
-        console.error('[Cache] Failed to save even after pruning.');
-      }
-    }
-  }
-};
-
-const getCache = (key: string) => {
-  if (typeof window === 'undefined') return null;
-  try {
-    const data = sessionStorage.getItem(CACHE_PREFIX + key);
-    return data ? JSON.parse(data) : null;
-  } catch { return null; }
-};
-
-// Singleton worker for tree parsing
-let treeWorker: Worker | null = null;
-const getWorker = () => {
-  if (typeof window === 'undefined') return null;
-  if (!treeWorker) {
-    treeWorker = new Worker(new URL('../utils/tree-parser.worker.ts', import.meta.url));
-  }
-  return treeWorker;
-};
+import { useCache } from './useCache';
+import { useTreeAnimation } from './useTreeAnimation';
+import { useGitHubData } from './useGitHubData';
 
 export const useGitTree = () => {
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [growth, setGrowth] = useState(0);
-  
+  const { setCache, getCache, removeCache } = useCache();
+  const { growth, animate, resetGrowth } = useTreeAnimation();
+  const { 
+    loading, setLoading, 
+    syncing, setSyncing, 
+    error, setError, 
+    getNewAbortSignal,
+    parseTreeAsync, 
+    fetchRepoData 
+  } = useGitHubData();
+
   const [branchData, setBranchData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
   const [prData, setPrData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
   
-  // Refs to avoid stale closures during long-running fetch operations
   const branchItemsRef = useRef<any[]>([]);
   const prItemsRef = useRef<any[]>([]);
-
-  const frameRef = useRef<number>(0);
   const fetchingNodes = useRef<Set<string>>(new Set());
-  const lastFetchId = useRef<number>(0);
-  const parsingRequestId = useRef<number>(0);
-  const currentModeRef = useRef<ViewMode>('branches');
+  
   const [activeMode, setActiveMode] = useState<ViewMode>('branches');
+  const currentModeRef = useRef<ViewMode>('branches');
   
   const stateTracker = useRef<{
     repo: string | null,
@@ -102,7 +46,6 @@ export const useGitTree = () => {
   const tree = activeMode === 'branches' ? branchData.tree : prData.tree;
   const items = activeMode === 'branches' ? branchData.items : prData.items;
 
-  // Sync refs with state when state changes (e.g. from manual clear or cache load)
   useEffect(() => {
     branchItemsRef.current = branchData.items;
   }, [branchData.items]);
@@ -111,47 +54,13 @@ export const useGitTree = () => {
     prItemsRef.current = prData.items;
   }, [prData.items]);
 
-  // Async tree parsing helper
-  const parseTreeAsync = useCallback((branches: GitBranch[], defaultBranch: string) => {
-    return new Promise<VisualizerNode>((resolve, reject) => {
-      const worker = getWorker();
-      if (!worker) {
-        // Fallback to sync parsing if worker fails to init
-        resolve(parseBranchTree(branches, defaultBranch));
-        return;
-      }
-
-      const requestId = ++parsingRequestId.current;
-      const handleMessage = (e: MessageEvent) => {
-        if (e.data.requestId === requestId) {
-          worker.removeEventListener('message', handleMessage);
-          if (e.data.error) reject(new Error(e.data.error));
-          else resolve(e.data.tree);
-        }
-      };
-
-      worker.addEventListener('message', handleMessage);
-      worker.postMessage({ branches, defaultBranch, requestId });
-    });
-  }, []);
-
-  const animate = useCallback(() => {
-    setGrowth(prev => {
-      if (prev >= 1) return 1;
-      frameRef.current = requestAnimationFrame(animate);
-      return prev + 0.02;
-    });
-  }, []);
-
-  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
-
   const clearCache = useCallback((repoUrl: string, mode: ViewMode) => {
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
-    sessionStorage.removeItem(CACHE_PREFIX + `${cleanPath}/${mode}`);
+    removeCache(`${cleanPath}/${mode}`);
     if (mode === 'branches') stateTracker.current.hasBranches = false;
     else stateTracker.current.hasPrs = false;
     stateTracker.current.enrichedModes.delete(mode);
-  }, []);
+  }, [removeCache]);
 
   const fetchNodeDetails = useCallback(async (repoUrl: string, node: VisualizerNode) => {
     const mode = currentModeRef.current;
@@ -210,7 +119,7 @@ export const useGitTree = () => {
   }, [branchData.tree, prData.tree]);
 
   const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode, forceRefresh = false) => {
-    const fetchId = ++lastFetchId.current;
+    const signal = getNewAbortSignal();
     currentModeRef.current = mode;
     setActiveMode(mode);
     
@@ -236,29 +145,21 @@ export const useGitTree = () => {
         if (mode === 'branches') { setBranchData(cached); stateTracker.current.hasBranches = true; }
         else { setPrData(cached); stateTracker.current.hasPrs = true; }
         stateTracker.current.enrichedModes.add(mode);
-        setGrowth(1); setError(null); setLoading(false);
-        // We still proceed if we think there might be more to fetch 
-        // but for now, cache is considered "complete" for the session
+        resetGrowth(1); setError(null); setLoading(false);
         return;
       }
     }
 
-    // If we already have items in memory for this mode, and we aren't forcing, 
-    // we only proceed if we know there's more to fetch (hasMore flags)
     const hasItems = mode === 'branches' ? branchData.items.length > 0 : prData.items.length > 0;
     const isFullyFetched = mode === 'branches' ? stateTracker.current.hasBranches : stateTracker.current.hasPrs;
     const isEnriched = stateTracker.current.enrichedModes.has(mode);
 
     if (!forceRefresh && hasItems && isFullyFetched && isEnriched) {
-      console.log(`[useGitTree] Already have complete data for ${mode}, skipping fetch.`);
       return;
     }
 
+    setLoading(true); setError(null); resetGrowth(0);
 
-    setLoading(true); setError(null); setGrowth(0);
-    cancelAnimationFrame(frameRef.current);
-
-    // If we need a refresh or don't have items, clear and reset flags for THIS mode
     const needsBranches = mode === 'branches' && (forceRefresh || branchItemsRef.current.length === 0);
     const needsPrs = mode === 'pr' && (forceRefresh || prItemsRef.current.length === 0);
 
@@ -281,24 +182,20 @@ export const useGitTree = () => {
       let branchCursor: string | null = null;
       let prCursor: string | null = null;
       
-      // We only fetch what we need and haven't fully fetched yet
       let hasMoreBranches = needsBranches || (!stateTracker.current.hasBranches && mode === 'branches');
       let hasMorePrs = needsPrs || (!stateTracker.current.hasPrs && mode === 'pr');
       let pageCount = 0;
 
-      const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
       const now = Date.now();
 
       const enrichItems = async (itemsToEnrich: any[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
         setSyncing(true);
         try {
-          if (!currentBaseSha) {
-            console.warn('[useGitTree] No baseSha available for enrichment.');
-            return;
-          }
-          for (let i = 0; i < itemsToEnrich.length; i += 20) {
-            if (fetchId !== lastFetchId.current) return;
-            const chunk = itemsToEnrich.slice(i, i + 20);
+          if (!currentBaseSha) return;
+          
+          for (let i = 0; i < itemsToEnrich.length; i += ENRICH_CHUNK_SIZE) {
+            if (signal.aborted) return;
+            const chunk = itemsToEnrich.slice(i, i + ENRICH_CHUNK_SIZE);
             
             let headShas: string[] = [];
             if (!isPrMode) {
@@ -314,10 +211,9 @@ export const useGitTree = () => {
             }
 
             if (headShas.length > 0) {
-              const { results } = await githubService.compareBatch(owner, repo, currentBaseSha, headShas);
-              if (fetchId !== lastFetchId.current) return;
+              const { results } = await githubService.compareBatch(owner, repo, currentBaseSha, headShas, signal);
+              if (signal.aborted) return;
 
-              // Use refs to get the absolute latest state
               const currentItems = isPrMode ? prItemsRef.current : branchItemsRef.current;
               const newItems = [...currentItems];
               
@@ -359,16 +255,14 @@ export const useGitTree = () => {
             }
           }
         } finally {
-          if (fetchId === lastFetchId.current) setSyncing(false);
+          if (!signal.aborted) setSyncing(false);
         }
       };
 
-      while ((hasMoreBranches || hasMorePrs) && pageCount < 50) {
-        const { data, errors } = await githubService.getBulkData(owner, repo, branchCursor, prCursor, hasMoreBranches, hasMorePrs);
-        if (errors) console.warn('[useGitTree] GraphQL partial errors:', errors);
-        if (!data?.repository) throw new Error(errors?.[0]?.message || 'Repository not found');
-
-        const repoData = data.repository;
+      while ((hasMoreBranches || hasMorePrs) && pageCount < MAX_FETCH_PAGES) {
+        if (signal.aborted) return;
+        const repoData = await fetchRepoData(owner, repo, { branchCursor, prCursor, hasMoreBranches, hasMorePrs, signal });
+        
         if (pageCount === 0) {
           base = repoData.defaultBranchRef?.name || 'main';
           baseSha = repoData.defaultBranchRef?.target?.oid || '';
@@ -425,8 +319,6 @@ export const useGitTree = () => {
           if (!hasMorePrs) stateTracker.current.hasPrs = true;
         }
 
-
-        
         animate();
         pageCount++;
 
@@ -436,12 +328,10 @@ export const useGitTree = () => {
           enrichItems(newPRs, base, baseSha, true);
         }
 
-        // Break if we are not fetching anything new in either list
         if (!hasMoreBranches && !hasMorePrs) break;
       }
 
-
-      if (fetchId === lastFetchId.current && !stateTracker.current.enrichedModes.has(mode)) {
+      if (!signal.aborted && !stateTracker.current.enrichedModes.has(mode)) {
         const currentItems = mode === 'branches' ? branchItemsRef.current : prItemsRef.current;
         if (currentItems.length > 0) {
           enrichItems(currentItems, base, baseSha, mode === 'pr');
@@ -449,15 +339,14 @@ export const useGitTree = () => {
       }
 
     } catch (err: any) {
-      console.error('[useGitTree] Fatal error during fetchTree:', err);
-      if (fetchId !== lastFetchId.current) return;
+      if (err.name === 'AbortError') return;
       if (err.message?.includes('403')) setError('RATE_LIMIT');
       else if (err.message?.includes('404')) setError('REPO_NOT_FOUND');
       else setError('FETCH_ERROR');
     } finally {
-      if (fetchId === lastFetchId.current) setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [animate, parseTreeAsync]);
+  }, [animate, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData, getNewAbortSignal, parseTreeAsync]);
 
   return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
 };

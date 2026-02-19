@@ -1,4 +1,5 @@
 import { GitBranch, VisualizerNode } from '../types';
+import { THIRTY_DAYS_MS } from '@/constants';
 
 const parseBranchTree = (branches: GitBranch[], defaultBranch: string): VisualizerNode => {
   const nodes: Record<string, VisualizerNode> = {};
@@ -30,7 +31,7 @@ const parseBranchTree = (branches: GitBranch[], defaultBranch: string): Visualiz
     .filter(t => t > 0);
     
   const newest = timestamps.length ? Math.max(...timestamps) : Date.now();
-  const oldest = timestamps.length ? Math.min(...timestamps) : Date.now() - (30 * 24 * 60 * 60 * 1000);
+  const oldest = timestamps.length ? Math.min(...timestamps) : Date.now() - THIRTY_DAYS_MS;
 
   trunk.metadata = {
     maxBehind: Math.max(...branches.map(b => b.behind || 0), 1),
