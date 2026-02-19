@@ -2,6 +2,13 @@
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { VisualizerNode } from '@/types';
+import { 
+  INITIAL_SCALE, ZOOM_SPEED, MIN_SCALE, MAX_SCALE, 
+  SMOOTH_LIMIT_STEP, CANVAS_WIDTH, CANVAS_HEIGHT, TRUNK_WIDTH,
+  SHADOW_BLUR_NORMAL, SHADOW_BLUR_HIGHLIGHT, ONE_DAY_MS,
+  COLOR_RATIO_LEVELS, TREE_NODE_PROGRESS_THRESHOLD,
+  TREE_LAYOUT
+} from '@/constants';
 
 interface VisualizerProps {
   tree: VisualizerNode;
@@ -34,23 +41,22 @@ export const Visualizer: React.FC<VisualizerProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const interactableRegions = useRef<InteractableRegion[]>([]);
   const [smoothLimit, setSmoothLimit] = useState(0);
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.8 });
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: INITIAL_SCALE });
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     if (tree.children?.length === 0) {
       setSmoothLimit(0);
-      setTransform({ x: 0, y: 0, scale: 0.8 });
+      setTransform({ x: 0, y: 0, scale: INITIAL_SCALE });
     }
   }, [tree.name]);
 
   const handleWheel = (e: React.WheelEvent) => {
-    const zoomSpeed = 0.001;
-    const delta = -e.deltaY * zoomSpeed;
+    const delta = -e.deltaY * ZOOM_SPEED;
     setTransform(prev => ({
       ...prev,
-      scale: Math.max(0.1, Math.min(5, prev.scale + delta))
+      scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev.scale + delta))
     }));
   };
 
@@ -139,7 +145,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     let frame: number;
     const target = (tree.children?.length || 0);
     const update = () => {
-      setSmoothLimit(prev => (prev < target ? prev + 0.2 : prev));
+      setSmoothLimit(prev => (prev < target ? prev + SMOOTH_LIMIT_STEP : prev));
       frame = requestAnimationFrame(update);
     };
     frame = requestAnimationFrame(update);
@@ -219,8 +225,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     const val = node.relativeAhead ?? node.ahead;
     
     const length = isTrunk 
-      ? 250 * progress 
-      : (Math.log10(val + 1) * 100 + 80) * progress * nodeArrivalProgress * Math.pow(0.92, depth);
+      ? TREE_LAYOUT.trunkLength * progress 
+      : (Math.log10(val + 1) * TREE_LAYOUT.branchLengthFactor + TREE_LAYOUT.branchLengthBase) * progress * nodeArrivalProgress * Math.pow(TREE_LAYOUT.branchShrinkage, depth);
 
     ctx.save();
 
@@ -245,10 +251,10 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       const range = Math.max(newest - oldest, 1);
       const ratio = Math.max(0, Math.min(1, (current - oldest) / range));
       
-      if (ratio > 0.8) color = '#60a5fa';
-      else if (ratio > 0.6) color = '#3b82f6';
-      else if (ratio > 0.4) color = '#2563eb';
-      else if (ratio > 0.2) color = '#1d4ed8';
+      if (ratio > COLOR_RATIO_LEVELS.VERY_HIGH) color = '#60a5fa';
+      else if (ratio > COLOR_RATIO_LEVELS.HIGH) color = '#3b82f6';
+      else if (ratio > COLOR_RATIO_LEVELS.MEDIUM) color = '#2563eb';
+      else if (ratio > COLOR_RATIO_LEVELS.LOW) color = '#1d4ed8';
       else color = '#172554';
     }
 
@@ -257,7 +263,6 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       if (!isOtherHighlighted) ctx.globalAlpha = isHighlighted ? 0.6 : 0.25;
     }
 
-    const trunkWidth = 18;
     ctx.beginPath();
     ctx.moveTo(0, 0);
     if (isTrunk) {
@@ -271,10 +276,10 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     if (isHighlighted) {
       ctx.shadowBlur = 25;
       ctx.shadowColor = '#fff';
-      ctx.lineWidth = isTrunk ? trunkWidth + 4 : Math.max(6, 14 - depth * 2.5);
+      ctx.lineWidth = isTrunk ? TRUNK_WIDTH + 4 : Math.max(6, 14 - depth * 2.5);
       ctx.globalAlpha = 1;
     } else {
-      ctx.lineWidth = isTrunk ? trunkWidth : Math.max(3, 10 - depth * 2.5);
+      ctx.lineWidth = isTrunk ? TRUNK_WIDTH : Math.max(3, 10 - depth * 2.5);
     }
 
     ctx.strokeStyle = isTrunk ? '#1e293b' : color;
@@ -289,8 +294,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({
         const side = getSide(child.name);
         const ratio = 1 - (child.behind / (rootMetadata?.maxBehind || 1));
         ctx.translate(0, -length * (0.2 + ratio * 0.75));
-        ctx.translate(side * ((trunkWidth / 2) - 1), 0);
-        const spread = 1.8;
+        ctx.translate(side * ((TRUNK_WIDTH / 2) - 1), 0);
+        const spread = TREE_LAYOUT.branchSpread;
         let angle = branches.length === 1 ? 0.5 * side : (Math.abs(((i / (branches.length - 1)) - 0.5) * spread)) * side;
         const clampedAngle = Math.max(-1.4, Math.min(1.4, currentAngle + angle));
         ctx.rotate(clampedAngle);
@@ -300,17 +305,17 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     } else {
       ctx.translate(0, -length);
       const dotRadius = isHighlighted ? 10 : 6;
-      if (nodeArrivalProgress > 0.8) {
+      if (nodeArrivalProgress > TREE_NODE_PROGRESS_THRESHOLD) {
         ctx.beginPath();
         ctx.arc(0, 0, dotRadius, 0, Math.PI * 2);
         ctx.fillStyle = color;
         if (isHighlighted) {
-          ctx.shadowBlur = 30;
+          ctx.shadowBlur = SHADOW_BLUR_HIGHLIGHT;
           ctx.shadowColor = '#fff';
           ctx.globalAlpha = 1;
-        } else if (node.lastUpdated && (new Date().getTime() - new Date(node.lastUpdated).getTime()) < 1000 * 60 * 60 * 24) {
+        } else if (node.lastUpdated && (new Date().getTime() - new Date(node.lastUpdated).getTime()) < ONE_DAY_MS) {
           if (!isOtherHighlighted || !isDimmed) {
-            ctx.shadowBlur = 20;
+            ctx.shadowBlur = SHADOW_BLUR_NORMAL;
             ctx.shadowColor = '#818cf8';
           }
         }
@@ -332,7 +337,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
         ctx.font = isHighlighted ? 'bold 12px monospace' : 'bold 10px monospace';
         
         if (isOtherHighlighted && isDimmed) ctx.globalAlpha = 0;
-        else ctx.globalAlpha = isHighlighted ? 1 : (nodeArrivalProgress - 0.8) * 5;
+        else ctx.globalAlpha = isHighlighted ? 1 : (nodeArrivalProgress - TREE_NODE_PROGRESS_THRESHOLD) * 5;
 
         const side = getSide(node.name);
         ctx.textAlign = side > 0 ? 'left' : 'right';
@@ -342,7 +347,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
 
       node.children?.forEach((child, i) => {
         ctx.save();
-        const spread = 0.7 * Math.pow(0.8, depth);
+        const spread = TREE_LAYOUT.leafSpread * Math.pow(TREE_LAYOUT.leafShrinkage, depth);
         const angle = ((i / (node.children.length - 1)) - 0.5) * spread || 0.3;
         ctx.rotate(angle);
         drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, revealedLimit, rootMetadata, i);
@@ -364,7 +369,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.save();
-      ctx.translate(canvas.width / 2 + transform.x, canvas.height - 100 + transform.y);
+      ctx.translate(canvas.width / 2 + transform.x, canvas.height - TREE_LAYOUT.trunkBaseY + transform.y);
       ctx.scale(transform.scale, transform.scale);
       drawNode(ctx, tree, time, growth, 0, 0, smoothLimit, tree.metadata, 0);
       ctx.restore();
@@ -383,7 +388,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       onMouseUp={handleMouseUp}
       onMouseLeave={() => setIsDragging(false)}
     >
-      <canvas ref={canvasRef} width={1400} height={1000} className="max-w-full max-h-full object-contain pointer-events-none" />
+      <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="max-w-full max-h-full object-contain pointer-events-none" />
     </div>
   );
 };

@@ -4,6 +4,10 @@ import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { VisualizerNode } from '@/types';
+import { 
+  THREE_TREE_LAYOUT, THREE_CAMERA, THREE_LIGHTS, 
+  THREE_ANIMATION, THREE_LOD, COLOR_RATIO_LEVELS
+} from '@/constants';
 
 const THEME = {
   background: '#020617',
@@ -11,15 +15,8 @@ const THEME = {
   trunk: '#334155',
   conflict: '#f43f5e',
   text: '#f1f5f9',
-  ambientIntensity: 0.6,
-  directIntensity: 1.2,
-};
-
-const TREE_LAYOUT = {
-  trunkLength: 800,
-  trunkRadius: 16,
-  minRadius: 2,
-  branchBaseAngle: 0.6,
+  ambientIntensity: THREE_LIGHTS.ambientIntensity,
+  directIntensity: THREE_LIGHTS.directIntensity,
 };
 
 interface ThreeVisualizerProps {
@@ -77,12 +74,12 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       // Use power to make the drop-off more dramatic (recent items stay bright, old fade fast)
       const ratio = Math.pow(rawRatio, 2);
       
-      if (ratio > 0.8) { 
+      if (ratio > COLOR_RATIO_LEVELS.VERY_HIGH) { 
         color = '#22d3ee'; // Bright Cyan
         emissiveIntensity = isHighlighted ? 0.8 : 0.5; 
       } 
       else if (ratio > 0.5) color = '#3b82f6'; // Primary Blue
-      else if (ratio > 0.2) color = '#1e40af'; // Dim Dark Blue
+      else if (ratio > COLOR_RATIO_LEVELS.LOW) color = '#1e40af'; // Dim Dark Blue
       else {
         color = '#334155'; // Desaturated Slate for old branches
         emissiveIntensity = isHighlighted ? 0.5 : 0;
@@ -123,8 +120,13 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     scene.background = new THREE.Color(THEME.background);
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 10000);
-    camera.position.set(0, 800, 1500);
+    const camera = new THREE.PerspectiveCamera(
+      THREE_CAMERA.fov, 
+      container.clientWidth / container.clientHeight, 
+      THREE_CAMERA.near, 
+      THREE_CAMERA.far
+    );
+    camera.position.set(THREE_CAMERA.initialPos.x, THREE_CAMERA.initialPos.y, THREE_CAMERA.initialPos.z);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -135,12 +137,12 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
+    controls.dampingFactor = THREE_ANIMATION.dampingFactor;
     controlsRef.current = controls;
 
     scene.add(new THREE.AmbientLight(0xffffff, THEME.ambientIntensity));
     const sun = new THREE.DirectionalLight(0xffffff, THEME.directIntensity);
-    sun.position.set(500, 1000, 500);
+    sun.position.set(THREE_LIGHTS.sunPos.x, THREE_LIGHTS.sunPos.y, THREE_LIGHTS.sunPos.z);
     scene.add(sun);
 
     const animGroups: THREE.Group[] = [];
@@ -179,8 +181,8 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     const buildBranch = (node: VisualizerNode, depth = 0, rootMeta: any = null): THREE.Group => {
       const isTrunk = node.type === 'trunk';
       const val = node.relativeAhead ?? node.ahead;
-      const len = isTrunk ? TREE_LAYOUT.trunkLength : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
-      const rad = isTrunk ? TREE_LAYOUT.trunkRadius : Math.max(TREE_LAYOUT.minRadius, 10 - depth * 2.5);
+      const len = isTrunk ? THREE_TREE_LAYOUT.trunkLength : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
+      const rad = isTrunk ? THREE_TREE_LAYOUT.trunkRadius : Math.max(THREE_TREE_LAYOUT.minRadius, 10 - depth * 2.5);
 
       const group = new THREE.Group();
       if (!isTrunk) animGroups.push(group);
@@ -216,7 +218,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
         }
 
         // LOD: Only create labels for top levels initially to save VRAM
-        if (depth <= 1) {
+        if (depth <= THREE_LOD.labelMaxDepth) {
           const { sprite, assets: labelAssets } = createLabel(node.name, depth, len);
           label = sprite;
           group.add(label);
@@ -234,7 +236,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
           const ratio = 1 - (child.behind / (meta?.maxBehind || 1));
           childBranch.position.set(0, len * (0.2 + ratio * 0.75), 0);
           childBranch.rotation.y = (i * 137.5) * (Math.PI / 180);
-          childBranch.rotation.z = TREE_LAYOUT.branchBaseAngle;
+          childBranch.rotation.z = THREE_TREE_LAYOUT.branchBaseAngle;
         } else {
           childBranch.position.set(0, len, 0);
           childBranch.rotation.z = children.length === 1 ? 0.3 : ((i / (children.length - 1)) - 0.5) * 0.8;
@@ -296,7 +298,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     const animate = (time: number) => {
       frame = requestAnimationFrame(animate);
       const t = time * 0.001;
-      animGroups.forEach((g, i) => { g.rotation.x = Math.sin(t + i) * 0.015; });
+      animGroups.forEach((g, i) => { g.rotation.x = Math.sin(t + i) * THREE_ANIMATION.rotationIntensity; });
       
       // Distance-based LOD for labels
       const camPos = camera.position;
@@ -305,7 +307,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
           const dist = data.mesh.getWorldPosition(v1).distanceTo(camPos);
           const isHigh = hoveredNodeName === data.node.name;
           // Hide top-level labels if too far, unless hovered
-          data.label.visible = isHigh || (dist < 2500 && !isDimmed);
+          data.label.visible = isHigh || (dist < THREE_LOD.labelVisibleDist && !isDimmed);
         }
       });
 

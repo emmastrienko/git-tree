@@ -1,4 +1,5 @@
 import { GitBranch, VisualizerNode } from '@/types';
+import { THIRTY_DAYS_MS } from '@/constants';
 
 export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): VisualizerNode => {
   const nodes = new Map<string, VisualizerNode>();
@@ -33,7 +34,7 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
   // We make the bounds 'sticky' by checking if we already had extreme values in the trunk metadata
   const prevMeta = trunk.metadata || {};
   const currentNewest = timestamps.length ? Math.max(...timestamps) : Date.now();
-  const currentOldest = timestamps.length ? Math.min(...timestamps) : Date.now() - (30 * 24 * 60 * 60 * 1000);
+  const currentOldest = timestamps.length ? Math.min(...timestamps) : Date.now() - THIRTY_DAYS_MS;
 
   trunk.metadata = {
     maxBehind: Math.max(...branches.map(b => b.behind), 1),

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { githubService } from '@/services/github';
 import { parseBranchTree, parseFileTree } from '@/utils/tree-parser';
 import { GitBranch, ViewMode, VisualizerNode } from '@/types';
+import { ANIMATION_STEP, ENRICH_CHUNK_SIZE, MAX_FETCH_PAGES, TWO_YEARS_MS } from '@/constants';
 
 const CACHE_PREFIX = 'git_viz_';
 
@@ -139,7 +140,7 @@ export const useGitTree = () => {
     setGrowth(prev => {
       if (prev >= 1) return 1;
       frameRef.current = requestAnimationFrame(animate);
-      return prev + 0.02;
+      return prev + ANIMATION_STEP;
     });
   }, []);
 
@@ -286,7 +287,6 @@ export const useGitTree = () => {
       let hasMorePrs = needsPrs || (!stateTracker.current.hasPrs && mode === 'pr');
       let pageCount = 0;
 
-      const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
       const now = Date.now();
 
       const enrichItems = async (itemsToEnrich: any[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
@@ -296,9 +296,9 @@ export const useGitTree = () => {
             console.warn('[useGitTree] No baseSha available for enrichment.');
             return;
           }
-          for (let i = 0; i < itemsToEnrich.length; i += 20) {
+          for (let i = 0; i < itemsToEnrich.length; i += ENRICH_CHUNK_SIZE) {
             if (fetchId !== lastFetchId.current) return;
-            const chunk = itemsToEnrich.slice(i, i + 20);
+            const chunk = itemsToEnrich.slice(i, i + ENRICH_CHUNK_SIZE);
             
             let headShas: string[] = [];
             if (!isPrMode) {
@@ -363,7 +363,7 @@ export const useGitTree = () => {
         }
       };
 
-      while ((hasMoreBranches || hasMorePrs) && pageCount < 50) {
+      while ((hasMoreBranches || hasMorePrs) && pageCount < MAX_FETCH_PAGES) {
         const { data, errors } = await githubService.getBulkData(owner, repo, branchCursor, prCursor, hasMoreBranches, hasMorePrs);
         if (errors) console.warn('[useGitTree] GraphQL partial errors:', errors);
         if (!data?.repository) throw new Error(errors?.[0]?.message || 'Repository not found');

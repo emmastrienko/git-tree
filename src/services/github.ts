@@ -1,6 +1,7 @@
 import { GitBranch, GitPullRequest } from '@/types';
+import { GITHUB_PER_PAGE, MAX_BRANCH_PAGES, MAX_PR_PAGES } from '@/constants';
 
-const fetcher = async <T>(url: string): Promise<T> => {
+export const fetcher = async <T>(url: string): Promise<T> => {
   const res = await fetch(url);
   if (!res.ok) {
     console.error(`[GitHub API] Error ${res.status} for ${url}`);
@@ -17,17 +18,16 @@ export const githubService = {
   getBranches: async (owner: string, repo: string) => {
     let all: any[] = [];
     let page = 1;
-    const MAX_PAGES = 10; 
     
     try {
-      while (page <= MAX_PAGES) {
-        const url = `/api/github/repos/${owner}/${repo}/branches?per_page=100&page=${page}`;
+      while (page <= MAX_BRANCH_PAGES) {
+        const url = `/api/github/repos/${owner}/${repo}/branches?per_page=${GITHUB_PER_PAGE}&page=${page}`;
         const pageData = await fetcher<any[]>(url);
         
         if (!pageData || pageData.length === 0) break;
         
         all = [...all, ...pageData];
-        if (pageData.length < 100) break;
+        if (pageData.length < GITHUB_PER_PAGE) break;
         page++;
       }
     } catch (e) {
@@ -40,17 +40,16 @@ export const githubService = {
   getPullRequests: async (owner: string, repo: string) => {
     let all: any[] = [];
     let page = 1;
-    const MAX_PAGES = 5; 
     
     try {
-      while (page <= MAX_PAGES) {
-        const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=100&page=${page}`;
+      while (page <= MAX_PR_PAGES) {
+        const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=${GITHUB_PER_PAGE}&page=${page}`;
         const pageData = await fetcher<any[]>(url);
         
         if (!pageData || pageData.length === 0) break;
         
         all = [...all, ...pageData];
-        if (pageData.length < 100) break;
+        if (pageData.length < GITHUB_PER_PAGE) break;
         page++;
       }
     } catch (e) {
@@ -64,7 +63,7 @@ export const githubService = {
     fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`),
 
   getPullRequestFiles: (owner: string, repo: string, pullNumber: number) =>
-    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`),
+    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=${GITHUB_PER_PAGE}`),
 
   compare: (owner: string, repo: string, base: string, head: string) => {
     const encodedBase = encodeURIComponent(base);
