@@ -5,11 +5,9 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Footer } from '@/components/layout/Footer';
-import { Visualizer } from '@/features/visualizer/Visualizer';
-import { ThreeVisualizer } from '@/features/visualizer/ThreeVisualizer';
+import { VisualizerContainer } from '@/features/visualizer/VisualizerContainer';
 import { ViewToggle } from '@/components/ui/ViewToggle';
 import { SyncStatus } from '@/components/ui/SyncStatus';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { NodeTooltip } from '@/components/ui/NodeTooltip';
 import { Legend } from '@/components/ui/Legend';
 import { useGitTree } from '@/hooks/useGitTree';
@@ -179,33 +177,18 @@ export default function Home() {
           />
         )}
 
-        {tree && !error ? (
-          is3D ? (
-            <ThreeVisualizer 
-              tree={tree} 
-              hoveredNodeName={hoveredNodeName}
-              filterAuthor={filterAuthor}
-              isDimmed={isSidebarHover || !!filterAuthor}
-              onHover={setHoveredNodeName}
-              isFetching={loading} 
-              onSelect={handleSelect}
-            />
-          ) : (
-            <Visualizer 
-              tree={tree} 
-              hoveredNodeName={hoveredNodeName}
-              filterAuthor={filterAuthor}
-              isDimmed={isSidebarHover || !!filterAuthor}
-              onHover={setHoveredNodeName}
-              growth={growth} 
-              isFetching={loading} 
-              onSelect={handleSelect}
-            />
-          )
-        ) : (
-          <EmptyState loading={loading} error={error} />
-        )}
-
+        <VisualizerContainer
+          tree={tree}
+          error={error}
+          is3D={is3D}
+          loading={loading}
+          growth={growth}
+          hoveredNodeName={hoveredNodeName}
+          filterAuthor={filterAuthor}
+          isSidebarHover={isSidebarHover}
+          onHover={setHoveredNodeName}
+          onSelect={handleSelect}
+        />
       </div>
     </MainLayout>
   );
