@@ -47,8 +47,8 @@ export const Header: React.FC<Props> = ({
             </button>
           )}
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="p-1.5 bg-indigo-600/10 rounded-lg group-hover:bg-indigo-600/20 transition-colors">
-              <GitGraph className="text-indigo-500" size={20} />
+            <div className="p-1 bg-indigo-600/10 rounded-lg group-hover:bg-indigo-600/20 transition-colors">
+              <img src="/logo.svg" alt="Git Tree Logo" className="w-6 h-6" />
             </div>
             <h1 className="font-bold tracking-tight text-base md:text-lg whitespace-nowrap bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Git Tree</h1>
           </Link>
