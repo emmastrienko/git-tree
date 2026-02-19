@@ -2,11 +2,36 @@ import { useCallback } from 'react';
 
 const CACHE_PREFIX = 'git_viz_';
 
+interface CachedData {
+  items: any[];
+  tree: any;
+  lastAccessed: number;
+}
+
 export const useCache = () => {
   const pruneCache = useCallback(() => {
     try {
       const keys = Object.keys(sessionStorage).filter(k => k.startsWith(CACHE_PREFIX));
-      keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => sessionStorage.removeItem(k));
+      
+      // Get all cached items with their timestamps
+      const entries = keys.map(key => {
+        try {
+          const raw = sessionStorage.getItem(key);
+          const data = raw ? JSON.parse(raw) : null;
+          return { key, lastAccessed: data?.lastAccessed || 0 };
+        } catch {
+          return { key, lastAccessed: 0 };
+        }
+      });
+
+      // Sort by lastAccessed (oldest first)
+      entries.sort((a, b) => a.lastAccessed - b.lastAccessed);
+
+      // Remove the oldest 50% of entries to create a buffer
+      const toRemove = entries.slice(0, Math.ceil(entries.length / 2));
+      toRemove.forEach(entry => sessionStorage.removeItem(entry.key));
+      
+      console.log(`[Cache] LRU Pruning: Removed ${toRemove.length} oldest items.`);
     } catch (e) {
       sessionStorage.clear();
     }
@@ -15,8 +40,9 @@ export const useCache = () => {
   const setCache = useCallback((key: string, value: any) => {
     if (typeof window === 'undefined') return;
     
-    const minimizedValue = {
+    const minimizedValue: CachedData = {
       ...value,
+      lastAccessed: Date.now(),
       items: value.items.map((item: any) => ({
         id: item.id,
         number: item.number,
@@ -53,8 +79,22 @@ export const useCache = () => {
   const getCache = useCallback((key: string) => {
     if (typeof window === 'undefined') return null;
     try {
-      const data = sessionStorage.getItem(CACHE_PREFIX + key);
-      return data ? JSON.parse(data) : null;
+      const fullKey = CACHE_PREFIX + key;
+      const raw = sessionStorage.getItem(fullKey);
+      if (!raw) return null;
+
+      const data: CachedData = JSON.parse(raw);
+      
+      // Update lastAccessed timestamp on read (LRU)
+      data.lastAccessed = Date.now();
+      try {
+        sessionStorage.setItem(fullKey, JSON.stringify(data));
+      } catch (e) {
+        // If we can't update the timestamp due to quota, just return the data
+        // as the data itself is still valid.
+      }
+      
+      return data;
     } catch { return null; }
   }, []);
 
