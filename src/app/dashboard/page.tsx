@@ -18,7 +18,8 @@ import { ViewMode, VisualizerNode } from '@/types';
 export default function Home() {
   const { 
     loading, syncing, error, tree, items, growth, 
-    fetchTree, fetchNodeDetails, clearCache 
+    fetchTree, fetchNodeDetails, clearCache,
+    setActiveMode, hasDataForMode
   } = useGitTree();
 
   const {
@@ -43,7 +44,8 @@ export default function Home() {
     fetchTree,
     clearCache,
     resetSelection,
-    itemsCount: items.length
+    setActiveMode,
+    hasDataForMode
   });
 
   return (

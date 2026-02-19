@@ -5,14 +5,16 @@ interface UseRepoStateProps {
   fetchTree: (repoUrl: string, mode: ViewMode, forceRefresh?: boolean) => Promise<void>;
   clearCache: (repoUrl: string, mode: ViewMode) => void;
   resetSelection: () => void;
-  itemsCount: number;
+  setActiveMode: (mode: ViewMode) => void;
+  hasDataForMode: (mode: ViewMode) => boolean;
 }
 
 export const useRepoState = ({ 
   fetchTree, 
   clearCache, 
   resetSelection, 
-  itemsCount 
+  setActiveMode,
+  hasDataForMode
 }: UseRepoStateProps) => {
   const [repoUrl, setRepoUrl] = useState('facebook/react');
   const [viewMode, setViewMode] = useState<ViewMode>('branches');
@@ -50,6 +52,9 @@ export const useRepoState = ({
     const urlMode = params.get('mode');
     const urlRepo = params.get('repo');
     
+    // Always sync mode to the tree hook
+    setActiveMode(viewMode);
+    
     if (urlMode !== viewMode || urlRepo !== repoUrl) {
       const newParams = new URLSearchParams();
       newParams.set('repo', repoUrl);
@@ -59,12 +64,12 @@ export const useRepoState = ({
       sessionStorage.setItem('last_view_mode', viewMode);
       
       // Auto-fetch if switching to a mode that doesn't have data yet
-      if (urlRepo === repoUrl && urlMode !== viewMode && itemsCount === 0) {
+      if (urlRepo === repoUrl && urlMode !== viewMode && !hasDataForMode(viewMode)) {
         console.log(`[useRepoState] Mode switched to ${viewMode}, triggering auto-fetch...`);
         fetchTree(repoUrl, viewMode);
       }
     }
-  }, [viewMode, repoUrl, fetchTree, itemsCount]);
+  }, [viewMode, repoUrl, fetchTree, setActiveMode, hasDataForMode]);
 
   const handleFetch = useCallback(() => {
     resetSelection();
