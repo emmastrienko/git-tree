@@ -12,22 +12,22 @@ import { NodeTooltip } from '@/components/ui/NodeTooltip';
 import { Legend } from '@/components/ui/Legend';
 import { useGitTree } from '@/hooks/useGitTree';
 import { useVisualizerState } from '@/hooks/useVisualizerState';
+import { useRepoState } from '@/hooks/useRepoState';
 import { ViewMode, VisualizerNode } from '@/types';
 
 export default function Home() {
-  const [repoUrl, setRepoUrl] = useState('facebook/react');
-  const [viewMode, setViewMode] = useState<ViewMode>('branches');
-  
-  const { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache } = useGitTree();
-  const isInitialized = useRef(false);
+  const { 
+    loading, syncing, error, tree, items, growth, 
+    fetchTree, fetchNodeDetails, clearCache 
+  } = useGitTree();
 
   const {
     is3D, setIs3D,
     selectedNodeName, setSelectedNodeName,
     hoveredNodeName, setHoveredNodeName,
     filterAuthor, setFilterAuthor,
-    isSidebarHover, setIsSidebarHover,
-    tooltipPos, setTooltipPos,
+    isSidebarHover,
+    tooltipPos,
     selectedNode,
     handleSelect,
     handleSidebarSelect,
@@ -35,69 +35,16 @@ export default function Home() {
     resetSelection
   } = useVisualizerState(tree);
 
-  useEffect(() => {
-    if (isInitialized.current) return;
-
-    const params = new URLSearchParams(window.location.search);
-    const urlRepo = params.get('repo');
-    const urlMode = params.get('mode') as ViewMode;
-    const lastRepo = sessionStorage.getItem('last_repo_url');
-    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
-    
-    const finalRepo = urlRepo || lastRepo;
-    const finalMode = urlMode || lastMode || 'branches';
-
-    if (finalRepo) {
-      setRepoUrl(finalRepo);
-      setViewMode(finalMode);
-      fetchTree(finalRepo, finalMode);
-    } else {
-      setRepoUrl('facebook/react');
-      setViewMode('branches');
-    }
-
-    isInitialized.current = true;
-  }, [fetchTree]);
-
-  useEffect(() => {
-    if (!isInitialized.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const urlMode = params.get('mode');
-    const urlRepo = params.get('repo');
-    
-    // Update URL and storage when state changes
-    if (urlMode !== viewMode || urlRepo !== repoUrl) {
-      const newParams = new URLSearchParams();
-      newParams.set('repo', repoUrl);
-      newParams.set('mode', viewMode);
-      window.history.pushState(null, '', `?${newParams.toString()}`);
-      sessionStorage.setItem('last_repo_url', repoUrl);
-      sessionStorage.setItem('last_view_mode', viewMode);
-      
-      // Auto-fetch if switching to a mode that doesn't have data yet
-      const hasNoData = viewMode === 'branches' ? items.length === 0 : items.length === 0; 
-      // Note: items is derived from activeMode in useGitTree, so we check if it's empty
-      
-      if (urlRepo === repoUrl && urlMode !== viewMode) {
-        console.log(`[Page] Mode switched to ${viewMode}, triggering auto-fetch...`);
-        fetchTree(repoUrl, viewMode);
-      }
-    }
-  }, [viewMode, repoUrl]);
-
-
-  const handleFetch = useCallback(() => {
-    resetSelection();
-    clearCache(repoUrl, viewMode);
-    sessionStorage.setItem('last_repo_url', repoUrl);
-    sessionStorage.setItem('last_view_mode', viewMode);
-    const params = new URLSearchParams();
-    params.set('repo', repoUrl);
-    params.set('mode', viewMode);
-    window.history.pushState(null, '', `?${params.toString()}`);
-    fetchTree(repoUrl, viewMode, true);
-    isInitialized.current = true;
-  }, [repoUrl, viewMode, clearCache, fetchTree, resetSelection]);
+  const {
+    repoUrl, setRepoUrl,
+    viewMode, setViewMode,
+    handleFetch
+  } = useRepoState({
+    fetchTree,
+    clearCache,
+    resetSelection,
+    itemsCount: items.length
+  });
 
   return (
     <MainLayout
