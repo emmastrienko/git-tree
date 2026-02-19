@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { githubService } from '@/services/github';
 import { parseBranchTree } from '@/utils/tree-parser';
 import { GitBranch, ViewMode, VisualizerNode } from '@/types';
@@ -19,8 +19,24 @@ export const useGitHubData = () => {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const lastFetchId = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const parsingRequestId = useRef<number>(0);
+
+  const getNewAbortSignal = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    return abortControllerRef.current.signal;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const parseTreeAsync = useCallback((branches: GitBranch[], defaultBranch: string) => {
     return new Promise<VisualizerNode>((resolve, reject) => {
@@ -49,17 +65,20 @@ export const useGitHubData = () => {
     prCursor: string | null;
     hasMoreBranches: boolean;
     hasMorePrs: boolean;
+    signal: AbortSignal;
   }) => {
     try {
       const { data, errors } = await githubService.getBulkData(
         owner, repo, 
         options.branchCursor, options.prCursor, 
-        options.hasMoreBranches, options.hasMorePrs
+        options.hasMoreBranches, options.hasMorePrs,
+        options.signal
       );
       if (errors) console.warn('[useGitHubData] GraphQL partial errors:', errors);
       if (!data?.repository) throw new Error(errors?.[0]?.message || 'Repository not found');
       return data.repository;
     } catch (err) {
+      if ((err as any).name === 'AbortError') throw err;
       console.error('[useGitHubData] Fatal error during fetch:', err);
       throw err;
     }
@@ -69,7 +88,7 @@ export const useGitHubData = () => {
     loading, setLoading,
     syncing, setSyncing,
     error, setError,
-    lastFetchId,
+    getNewAbortSignal,
     parseTreeAsync,
     fetchRepoData
   };

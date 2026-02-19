@@ -19,7 +19,7 @@ export const useGitTree = () => {
     loading, setLoading, 
     syncing, setSyncing, 
     error, setError, 
-    lastFetchId, 
+    getNewAbortSignal,
     parseTreeAsync, 
     fetchRepoData 
   } = useGitHubData();
@@ -119,7 +119,7 @@ export const useGitTree = () => {
   }, [branchData.tree, prData.tree]);
 
   const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode, forceRefresh = false) => {
-    const fetchId = ++lastFetchId.current;
+    const signal = getNewAbortSignal();
     currentModeRef.current = mode;
     setActiveMode(mode);
     
@@ -194,7 +194,7 @@ export const useGitTree = () => {
           if (!currentBaseSha) return;
           
           for (let i = 0; i < itemsToEnrich.length; i += ENRICH_CHUNK_SIZE) {
-            if (fetchId !== lastFetchId.current) return;
+            if (signal.aborted) return;
             const chunk = itemsToEnrich.slice(i, i + ENRICH_CHUNK_SIZE);
             
             let headShas: string[] = [];
@@ -211,8 +211,8 @@ export const useGitTree = () => {
             }
 
             if (headShas.length > 0) {
-              const { results } = await githubService.compareBatch(owner, repo, currentBaseSha, headShas);
-              if (fetchId !== lastFetchId.current) return;
+              const { results } = await githubService.compareBatch(owner, repo, currentBaseSha, headShas, signal);
+              if (signal.aborted) return;
 
               const currentItems = isPrMode ? prItemsRef.current : branchItemsRef.current;
               const newItems = [...currentItems];
@@ -255,12 +255,13 @@ export const useGitTree = () => {
             }
           }
         } finally {
-          if (fetchId === lastFetchId.current) setSyncing(false);
+          if (!signal.aborted) setSyncing(false);
         }
       };
 
       while ((hasMoreBranches || hasMorePrs) && pageCount < MAX_FETCH_PAGES) {
-        const repoData = await fetchRepoData(owner, repo, { branchCursor, prCursor, hasMoreBranches, hasMorePrs });
+        if (signal.aborted) return;
+        const repoData = await fetchRepoData(owner, repo, { branchCursor, prCursor, hasMoreBranches, hasMorePrs, signal });
         
         if (pageCount === 0) {
           base = repoData.defaultBranchRef?.name || 'main';
@@ -330,7 +331,7 @@ export const useGitTree = () => {
         if (!hasMoreBranches && !hasMorePrs) break;
       }
 
-      if (fetchId === lastFetchId.current && !stateTracker.current.enrichedModes.has(mode)) {
+      if (!signal.aborted && !stateTracker.current.enrichedModes.has(mode)) {
         const currentItems = mode === 'branches' ? branchItemsRef.current : prItemsRef.current;
         if (currentItems.length > 0) {
           enrichItems(currentItems, base, baseSha, mode === 'pr');
@@ -338,14 +339,14 @@ export const useGitTree = () => {
       }
 
     } catch (err: any) {
-      if (fetchId !== lastFetchId.current) return;
+      if (err.name === 'AbortError') return;
       if (err.message?.includes('403')) setError('RATE_LIMIT');
       else if (err.message?.includes('404')) setError('REPO_NOT_FOUND');
       else setError('FETCH_ERROR');
     } finally {
-      if (fetchId === lastFetchId.current) setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [animate, parseTreeAsync, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData]);
+  }, [animate, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData, getNewAbortSignal, parseTreeAsync]);
 
   return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
 };
