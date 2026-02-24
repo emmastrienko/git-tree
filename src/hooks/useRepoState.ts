@@ -21,26 +21,41 @@ export const useRepoState = ({
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  // Initialize state from URL or SessionStorage
+  // Initialize state only from searchParams to ensure server/client match
   const [repoUrl, setRepoUrl] = useState(() => {
-    if (typeof window === 'undefined') return 'facebook/react';
-    return searchParams.get('repo') || sessionStorage.getItem('last_repo_url') || 'facebook/react';
+    return searchParams.get('repo') || 'facebook/react';
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    if (typeof window === 'undefined') return 'branches';
-    return (searchParams.get('mode') as ViewMode) || (sessionStorage.getItem('last_view_mode') as ViewMode) || 'branches';
+    return (searchParams.get('mode') as ViewMode) || 'branches';
   });
 
   const isInitialized = useRef(false);
 
-  // Initial fetch
+  // Sync from SessionStorage after mount if URL params are missing
   useEffect(() => {
     if (isInitialized.current) return;
-    
-    fetchTree(repoUrl, viewMode);
+
+    const urlRepo = searchParams.get('repo');
+    const urlMode = searchParams.get('mode') as ViewMode;
+    const lastRepo = sessionStorage.getItem('last_repo_url');
+    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
+
+    let finalRepo = repoUrl;
+    let finalMode = viewMode;
+
+    if (!urlRepo && lastRepo) {
+      finalRepo = lastRepo;
+      setRepoUrl(lastRepo);
+    }
+    if (!urlMode && lastMode) {
+      finalMode = lastMode;
+      setViewMode(lastMode);
+    }
+
+    fetchTree(finalRepo, finalMode);
     isInitialized.current = true;
-  }, [fetchTree, repoUrl, viewMode]);
+  }, [fetchTree, searchParams]); // Run once on mount
 
   // Sync state back to URL and Storage
   useEffect(() => {

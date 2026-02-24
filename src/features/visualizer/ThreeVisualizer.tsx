@@ -61,7 +61,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
 
     const pr = node.metadata?.prNumber;
     if (pr) {
-      const status = node.metadata.status;
+      const status = node.metadata?.status;
       color = status === 'APPROVED' ? '#22c55e' : (status === 'CHANGES_REQUESTED' ? '#f43f5e' : '#eab308');
       if (!isHighlighted) emissiveIntensity = 0.3;
     } else if (node.hasConflicts) {

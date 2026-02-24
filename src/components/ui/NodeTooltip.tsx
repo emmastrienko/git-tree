@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useLayoutEffect, useRef, useState, useEffect } from 'react';
+import Image from 'next/image';
 import { VisualizerNode } from '@/types';
 import { GitCommit, AlertCircle, X, Activity, ExternalLink, ChevronRight, Copy, Check, Clock, FileText, Plus, Minus, Loader2 } from 'lucide-react';
 
@@ -34,9 +35,14 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
   const [tailPos, setTailPos] = useState({ x: -6, y: 80 });
   const [isMobile, setIsMobile] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
   
   const githubLink = `https://github.com/${repoUrl}/tree/${node.name}`;
   const relativeTime = formatRelativeTime(node.lastUpdated);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   useLayoutEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -211,7 +217,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
                       Merged
                     </span>
                   )}
-                  {relativeTime && (
+                  {relativeTime && hasMounted && (
                     <span className="flex items-center gap-1 text-[10px] text-slate-500 font-medium ml-1">
                       <Clock size={10} /> {relativeTime}
                     </span>
@@ -259,7 +265,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
                   Merged
                 </span>
               )}
-              {relativeTime && (
+              {relativeTime && hasMounted && (
                 <span className="flex items-center gap-1 text-[10px] text-slate-500 font-medium ml-1">
                   <Clock size={10} /> {relativeTime}
                 </span>
@@ -282,7 +288,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
         {node.author && (
           <div className="px-4 py-2 bg-white/[0.03] border-b border-white/5 flex items-center gap-2">
             {node.author.avatarUrl ? (
-              <img src={node.author.avatarUrl} className="w-5 h-5 rounded-full border border-white/10" alt="" />
+              <Image src={node.author.avatarUrl} width={20} height={20} className="rounded-full border border-white/10" alt={node.author.login} />
             ) : (
               <div className="w-5 h-5 rounded-full bg-white/5 border border-white/10" />
             )}

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Menu, Search, Share2, Check, Info, LayoutDashboard } from 'lucide-react';
 import { ViewMode } from '@/types';
 
@@ -48,7 +49,7 @@ export const Header: React.FC<Props> = ({
           )}
           <Link href="/" className="flex items-center gap-2 group">
             <div className="p-1 bg-indigo-600/10 rounded-lg group-hover:bg-indigo-600/20 transition-colors">
-              <img src="/logo.svg" alt="Git Tree Logo" className="w-6 h-6" />
+              <Image src="/logo.svg" alt="Git Tree Logo" width={24} height={24} />
             </div>
             <h1 className="font-bold tracking-tight text-base md:text-lg whitespace-nowrap bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Git Tree</h1>
           </Link>

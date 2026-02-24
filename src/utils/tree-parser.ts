@@ -1,4 +1,4 @@
-import { GitBranch, VisualizerNode } from '@/types';
+import { GitBranch, VisualizerNode, GitHubFileResponse } from '@/types';
 import { THIRTY_DAYS_MS } from '@/constants';
 
 export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): VisualizerNode => {
@@ -93,7 +93,7 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
   return trunk;
 };
 
-export const parseFileTree = (files: any[]): VisualizerNode => {
+export const parseFileTree = (files: GitHubFileResponse[]): VisualizerNode => {
   const root: VisualizerNode = {
     name: 'root',
     type: 'folder',

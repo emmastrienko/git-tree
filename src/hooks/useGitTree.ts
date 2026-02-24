@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { githubService } from '@/services/github';
 import { parseFileTree } from '@/utils/tree-parser';
-import { GitBranch, ViewMode, VisualizerNode } from '@/types';
+import { GitBranch, ViewMode, VisualizerNode, AnyRecord, GitHubCompareResponse } from '@/types';
 import { 
   ENRICH_CHUNK_SIZE, 
   MAX_FETCH_PAGES, 
@@ -70,13 +70,13 @@ export const useGitTree = () => {
 
       if (mode === 'pr' && prNumber) {
         prFiles = await githubService.getPullRequestFiles(owner, repo, prNumber);
-        additions = prFiles.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
-        deletions = prFiles.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
+        additions = prFiles.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.additions, 0) || 0;
+        deletions = prFiles.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.deletions, 0) || 0;
         filesChanged = prFiles.length || 0;
       } else {
         const comp = await githubService.compare(owner, repo, baseBranch, node.name);
-        additions = comp.files?.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
-        deletions = comp.files?.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
+        additions = comp.files?.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.additions, 0) || 0;
+        deletions = comp.files?.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.deletions, 0) || 0;
         filesChanged = comp.files?.length || 0;
         const latestCommit = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
         if (latestCommit) lastUpdated = latestCommit.commit.author.date;
@@ -84,7 +84,7 @@ export const useGitTree = () => {
 
       const details = { additions, deletions, filesChanged, lastUpdated, fileTree: prFiles ? parseFileTree(prFiles) : undefined };
 
-      const updateFn = (prev: {tree: VisualizerNode | null, items: any[]}) => {
+      const updateFn = (prev: {tree: VisualizerNode | null, items: AnyRecord[]}) => {
         const newItems = prev.items.map(item => {
           const isMatch = mode === 'branches' ? item.name === node.name : item.number === prNumber;
           return isMatch ? { ...item, ...details } : item;
@@ -157,7 +157,7 @@ export const useGitTree = () => {
       let baseSha = stateTracker.current.baseSha || '';
       const now = Date.now();
 
-      const enrichData = async (itemsToEnrich: any[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
+      const enrichData = async (itemsToEnrich: AnyRecord[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
         setSyncing(true);
         try {
           if (!currentBaseSha) return;
@@ -186,14 +186,14 @@ export const useGitTree = () => {
               const currentItems = isPrMode ? prItemsRef.current : branchItemsRef.current;
               const newItems = [...currentItems];
               
-              results?.forEach((res: any) => {
+              results?.forEach((res: AnyRecord) => {
                 if (res.success) {
                   const idx = newItems.findIndex(item => (isPrMode ? item.head?.sha : item.sha) === res.head);
                   if (idx !== -1) {
                     newItems[idx] = { 
                       ...newItems[idx], 
                       ahead: res.data.ahead_by, behind: res.data.behind_by, 
-                      history: res.data.commits?.map((c: any) => c.sha) || [],
+                      history: res.data.commits?.map((c: AnyRecord) => c.sha) || [],
                       isMerged: res.data.status === 'identical' || res.data.status === 'behind'
                     };
                   }
@@ -204,10 +204,11 @@ export const useGitTree = () => {
                 ? newItems.map(pr => ({ 
                     name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead, behind: pr.behind, 
                     history: pr.history, lastUpdated: pr.lastUpdated, author: pr.author, 
+                    isMerged: pr.isMerged,
                     mergeBaseSha: pr.baseRefName === currentBase ? undefined : pr.baseRefName, 
                     metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
-                  } as any))
-                : newItems;
+                  }))
+                : (newItems as unknown as GitBranch[]);
 
               const newTree = await parseTreeAsync(nodesToParse, currentBase);
               if (newItems.length > 0 && newTree) setCache(`${cleanPath}/${isPrMode ? 'pr' : 'branches'}`, { items: newItems, tree: newTree });
@@ -244,12 +245,12 @@ export const useGitTree = () => {
             stateTracker.current.baseSha = baseSha;
           }
 
-          let newBranches: any[] = [];
-          let newPRs: any[] = [];
+          let newBranches: AnyRecord[] = [];
+          let newPRs: AnyRecord[] = [];
 
           if (hasMoreBranches && repoData.refs) {
             const nodes = repoData.refs.nodes || [];
-            newBranches = nodes.map((b: any) => ({ 
+            newBranches = nodes.map((b: AnyRecord) => ({ 
               name: b.name, sha: b.target?.oid || '', ahead: 0, behind: 0, isBase: b.name === base,
               isMerged: false,
               lastUpdated: b.target?.authoredDate,
@@ -268,7 +269,7 @@ export const useGitTree = () => {
 
           if (hasMorePrs && repoData.pullRequests) {
             const nodes = repoData.pullRequests.nodes || [];
-            newPRs = nodes.map((pr: any) => ({ 
+            newPRs = nodes.map((pr: AnyRecord) => ({ 
               ...pr, html_url: pr.url, draft: pr.isDraft, 
               head: { ref: pr.headRefName, sha: pr.headRef?.target?.oid || '' },
               user: { login: pr.author?.login, avatar_url: pr.author?.avatarUrl },
@@ -277,13 +278,13 @@ export const useGitTree = () => {
             }));
 
             const allPRs = [...prItemsRef.current, ...newPRs];
-            const prNodes: GitBranch[] = allPRs.map((pr: any) => ({ 
+            const prNodes: GitBranch[] = allPRs.map((pr: AnyRecord) => ({ 
               name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead || 0, behind: pr.behind || 0, 
               history: pr.history || [], lastUpdated: pr.lastUpdated, author: pr.author, 
               isMerged: pr.isMerged,
               mergeBaseSha: pr.baseRefName === base ? undefined : pr.baseRefName, 
               metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
-            } as any));
+            }));
             
             const newTree = await parseTreeAsync(prNodes, base);
             setPrData({ items: allPRs, tree: newTree });
