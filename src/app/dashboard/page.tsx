@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -13,7 +14,7 @@ import { useGitTree } from '@/hooks/useGitTree';
 import { useVisualizerState } from '@/hooks/useVisualizerState';
 import { useRepoState } from '@/hooks/useRepoState';
 
-export default function Home() {
+function DashboardContent() {
   const { 
     loading, syncing, error, tree, items, growth, 
     fetchTree, fetchNodeDetails, clearCache,
@@ -103,5 +104,13 @@ export default function Home() {
         />
       </div>
     </MainLayout>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="w-full h-screen flex items-center justify-center bg-[#020617] text-white">Loading Dashboard...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }
