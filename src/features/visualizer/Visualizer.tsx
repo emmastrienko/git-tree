@@ -158,14 +158,14 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     return hash % 2 === 0 ? 1 : -1;
   };
 
-  const drawFileGarden = useCallback((
+  const drawFileGarden = useCallback(function drawGarden(
     ctx: CanvasRenderingContext2D,
     node: VisualizerNode,
     len: number,
     depth: number,
     time: number,
     progress: number
-  ) => {
+  ) {
     if (!node || depth > 6) return;
     const currentLen = len * progress;
     ctx.save();
@@ -196,13 +196,13 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       ctx.save();
       const angle = node.children.length === 1 ? 0.3 : ((i / (node.children.length - 1)) - 0.5) * 1.2;
       ctx.rotate(angle);
-      drawFileGarden(ctx, child, len * 0.75, depth + 1, time, progress);
+      drawGarden(ctx, child, len * 0.75, depth + 1, time, progress);
       ctx.restore();
     });
     ctx.restore();
   }, []);
 
-  const drawNode = useCallback((
+  const drawNode = useCallback(function draw(
     ctx: CanvasRenderingContext2D,
     node: VisualizerNode,
     time: number,
@@ -212,7 +212,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     revealedLimit: number,
     rootMetadata: any,
     index: number = 0
-  ) => {
+  ) {
     if (node.discoveryIndex !== undefined && node.discoveryIndex > revealedLimit) return;
 
     const nodeArrivalProgress = node.discoveryIndex !== undefined 
@@ -296,10 +296,10 @@ export const Visualizer: React.FC<VisualizerProps> = ({
         ctx.translate(0, -length * (0.2 + ratio * 0.75));
         ctx.translate(side * ((TRUNK_WIDTH / 2) - 1), 0);
         const spread = TREE_LAYOUT.branchSpread;
-        let angle = branches.length === 1 ? 0.5 * side : (Math.abs(((i / (branches.length - 1)) - 0.5) * spread)) * side;
+        const angle = branches.length === 1 ? 0.5 * side : (Math.abs(((i / (branches.length - 1)) - 0.5) * spread)) * side;
         const clampedAngle = Math.max(-1.4, Math.min(1.4, currentAngle + angle));
         ctx.rotate(clampedAngle);
-        drawNode(ctx, child, time, progress, depth + 1, clampedAngle, revealedLimit, rootMetadata, i);
+        draw(ctx, child, time, progress, depth + 1, clampedAngle, revealedLimit, rootMetadata, i);
         ctx.restore();
       });
     } else {
@@ -350,7 +350,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
         const spread = TREE_LAYOUT.leafSpread * Math.pow(TREE_LAYOUT.leafShrinkage, depth);
         const angle = ((i / (node.children.length - 1)) - 0.5) * spread || 0.3;
         ctx.rotate(angle);
-        drawNode(ctx, child, time, progress, depth + 1, currentAngle + angle, revealedLimit, rootMetadata, i);
+        draw(ctx, child, time, progress, depth + 1, currentAngle + angle, revealedLimit, rootMetadata, i);
         ctx.restore();
       });
     }
