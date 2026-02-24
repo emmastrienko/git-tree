@@ -5,10 +5,10 @@ export const useTreeAnimation = () => {
   const [growth, setGrowth] = useState(0);
   const frameRef = useRef<number>(0);
 
-  const animate = useCallback(() => {
+  const animate = useCallback(function loop() {
     setGrowth(prev => {
       if (prev >= 1) return 1;
-      frameRef.current = requestAnimationFrame(animate);
+      frameRef.current = requestAnimationFrame(loop);
       return prev + ANIMATION_STEP;
     });
   }, []);

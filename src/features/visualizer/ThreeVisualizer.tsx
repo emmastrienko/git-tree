@@ -330,6 +330,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       container.removeEventListener('mousedown', onDown);
       container.removeEventListener('mouseup', onUp);
       assets.forEach(a => a.dispose());
+      controls.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
