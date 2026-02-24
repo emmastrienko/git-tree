@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -13,7 +12,6 @@ import { Legend } from '@/components/ui/Legend';
 import { useGitTree } from '@/hooks/useGitTree';
 import { useVisualizerState } from '@/hooks/useVisualizerState';
 import { useRepoState } from '@/hooks/useRepoState';
-import { ViewMode, VisualizerNode } from '@/types';
 
 export default function Home() {
   const { 

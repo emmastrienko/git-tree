@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ViewMode } from '@/types';
 
 interface UseRepoStateProps {
@@ -16,74 +17,72 @@ export const useRepoState = ({
   setActiveMode,
   hasDataForMode
 }: UseRepoStateProps) => {
-  const [repoUrl, setRepoUrl] = useState('facebook/react');
-  const [viewMode, setViewMode] = useState<ViewMode>('branches');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  // Initialize state from URL or SessionStorage
+  const [repoUrl, setRepoUrl] = useState(() => {
+    if (typeof window === 'undefined') return 'facebook/react';
+    return searchParams.get('repo') || sessionStorage.getItem('last_repo_url') || 'facebook/react';
+  });
+
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === 'undefined') return 'branches';
+    return (searchParams.get('mode') as ViewMode) || (sessionStorage.getItem('last_view_mode') as ViewMode) || 'branches';
+  });
+
   const isInitialized = useRef(false);
 
-  // Initial sync from URL or SessionStorage
+  // Initial fetch
   useEffect(() => {
     if (isInitialized.current) return;
-
-    const params = new URLSearchParams(window.location.search);
-    const urlRepo = params.get('repo');
-    const urlMode = params.get('mode') as ViewMode;
-    const lastRepo = sessionStorage.getItem('last_repo_url');
-    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
     
-    const finalRepo = urlRepo || lastRepo;
-    const finalMode = urlMode || lastMode || 'branches';
-
-    if (finalRepo) {
-      setRepoUrl(finalRepo);
-      setViewMode(finalMode);
-      fetchTree(finalRepo, finalMode);
-    } else {
-      setRepoUrl('facebook/react');
-      setViewMode('branches');
-    }
-
+    fetchTree(repoUrl, viewMode);
     isInitialized.current = true;
-  }, [fetchTree]);
+  }, [fetchTree, repoUrl, viewMode]);
 
   // Sync state back to URL and Storage
   useEffect(() => {
     if (!isInitialized.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const urlMode = params.get('mode');
-    const urlRepo = params.get('repo');
+    
+    const urlMode = searchParams.get('mode');
+    const urlRepo = searchParams.get('repo');
     
     // Always sync mode to the tree hook
     setActiveMode(viewMode);
     
     if (urlMode !== viewMode || urlRepo !== repoUrl) {
-      const newParams = new URLSearchParams();
-      newParams.set('repo', repoUrl);
-      newParams.set('mode', viewMode);
-      window.history.pushState(null, '', `?${newParams.toString()}`);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('repo', repoUrl);
+      params.set('mode', viewMode);
+      
+      router.replace(`${pathname}?${params.toString()}`);
+      
       sessionStorage.setItem('last_repo_url', repoUrl);
       sessionStorage.setItem('last_view_mode', viewMode);
       
       // Auto-fetch if switching to a mode that doesn't have data yet
       if (urlRepo === repoUrl && urlMode !== viewMode && !hasDataForMode(viewMode)) {
-        console.log(`[useRepoState] Mode switched to ${viewMode}, triggering auto-fetch...`);
         fetchTree(repoUrl, viewMode);
       }
     }
-  }, [viewMode, repoUrl, fetchTree, setActiveMode, hasDataForMode]);
+  }, [viewMode, repoUrl, fetchTree, setActiveMode, hasDataForMode, pathname, router, searchParams]);
 
   const handleFetch = useCallback(() => {
     resetSelection();
     clearCache(repoUrl, viewMode);
     
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(searchParams.toString());
     params.set('repo', repoUrl);
     params.set('mode', viewMode);
-    window.history.pushState(null, '', `?${params.toString()}`);
+    router.replace(`${pathname}?${params.toString()}`);
+    
     sessionStorage.setItem('last_repo_url', repoUrl);
     sessionStorage.setItem('last_view_mode', viewMode);
     
     fetchTree(repoUrl, viewMode, true);
-  }, [repoUrl, viewMode, clearCache, fetchTree, resetSelection]);
+  }, [repoUrl, viewMode, clearCache, fetchTree, resetSelection, pathname, router, searchParams]);
 
   return {
     repoUrl,
