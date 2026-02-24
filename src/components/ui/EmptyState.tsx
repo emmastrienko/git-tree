@@ -18,7 +18,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ loading, error }) => {
         <div className="flex flex-col items-center gap-2">
           <h3 className="text-sm font-bold uppercase tracking-widest text-slate-100">Repository Not Found</h3>
           <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-            We couldn't find that repository. Please check the spelling or ensure the repository is public.
+            We couldn&apos;t find that repository. Please check the spelling or ensure the repository is public.
           </p>
           <p className="text-[10px] text-slate-600 mt-2 italic">
             Format: owner/repository (e.g., facebook/react)

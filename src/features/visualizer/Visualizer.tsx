@@ -31,7 +31,6 @@ interface InteractableRegion {
 export const Visualizer: React.FC<VisualizerProps> = ({ 
   tree, 
   growth = 1, 
-  isFetching, 
   hoveredNodeName,
   filterAuthor,
   isDimmed,
@@ -355,7 +354,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       });
     }
     ctx.restore();
-  }, [isFetching, tree.children, hoveredNodeName, isDimmed, filterAuthor, drawFileGarden]);
+  }, [tree.children, hoveredNodeName, isDimmed, filterAuthor, drawFileGarden]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

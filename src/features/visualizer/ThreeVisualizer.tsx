@@ -334,7 +334,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
-  }, [tree]);
+  }, [tree, hoveredNodeName, isDimmed, onHover, onSelect]);
 
   useEffect(() => {
     nodesMap.current.forEach((data, name) => {

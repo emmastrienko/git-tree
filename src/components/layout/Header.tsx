@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { GitGraph, Menu, Search, Share2, Check, Info, LayoutDashboard } from 'lucide-react';
+import { Menu, Search, Share2, Check, Info, LayoutDashboard } from 'lucide-react';
 import { ViewMode } from '@/types';
 
 interface Props {
