@@ -206,7 +206,15 @@ export const useGitTree = () => {
                     history: pr.history, lastUpdated: pr.lastUpdated, author: pr.author, 
                     isMerged: pr.isMerged,
                     mergeBaseSha: pr.baseRefName === currentBase ? undefined : pr.baseRefName, 
-                    metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
+                    metadata: { 
+                      prNumber: pr.number, 
+                      status: pr.review_status, 
+                      displayTitle: pr.title, 
+                      isDraft: pr.isDraft, 
+                      baseBranch: pr.baseRefName, 
+                      headBranch: pr.headRefName,
+                      labels: pr.labels?.nodes || []
+                    } 
                   }))
                 : (newItems as unknown as GitBranch[]);
 
@@ -283,7 +291,15 @@ export const useGitTree = () => {
               history: pr.history || [], lastUpdated: pr.lastUpdated, author: pr.author, 
               isMerged: pr.isMerged,
               mergeBaseSha: pr.baseRefName === base ? undefined : pr.baseRefName, 
-              metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
+              metadata: { 
+                prNumber: pr.number, 
+                status: pr.review_status, 
+                displayTitle: pr.title, 
+                isDraft: pr.isDraft, 
+                baseBranch: pr.baseRefName, 
+                headBranch: pr.headRefName,
+                labels: pr.labels?.nodes || []
+              } 
             }));
             
             const newTree = await parseTreeAsync(prNodes, base);

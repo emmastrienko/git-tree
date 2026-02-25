@@ -138,6 +138,9 @@ export const githubService = {
               reviews(last: 1) {
                 nodes { state }
               }
+              labels(first: 5) {
+                nodes { name color }
+              }
             }
           }
         }

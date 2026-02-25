@@ -75,6 +75,11 @@ export interface GitHubAuthor {
   avatarUrl?: string;
 }
 
+export interface GitHubLabel {
+  name: string;
+  color: string;
+}
+
 export interface NodeMetadata {
   prNumber?: number;
   status?: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING';
@@ -85,6 +90,7 @@ export interface NodeMetadata {
   newestTimestamp?: number;
   oldestTimestamp?: number;
   maxBehind?: number;
+  labels?: GitHubLabel[];
   [key: string]: any;
 }
 

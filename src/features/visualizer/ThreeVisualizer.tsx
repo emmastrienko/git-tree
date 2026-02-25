@@ -62,7 +62,14 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     const pr = node.metadata?.prNumber;
     if (pr) {
       const status = node.metadata?.status;
-      color = status === 'APPROVED' ? '#22c55e' : (status === 'CHANGES_REQUESTED' ? '#f43f5e' : '#eab308');
+      if (status === 'APPROVED') color = '#22c55e';
+      else if (status === 'CHANGES_REQUESTED') color = '#f43f5e';
+      else if (node.metadata?.labels && node.metadata.labels.length > 0) {
+        // Use the color of the first label
+        color = `#${node.metadata.labels[0].color}`;
+      } else {
+        color = '#eab308'; // Default pending yellow
+      }
       if (!isHighlighted) emissiveIntensity = 0.3;
     } else if (node.hasConflicts) {
       color = THEME.conflict;

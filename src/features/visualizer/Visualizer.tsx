@@ -240,7 +240,11 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       const status = node.metadata?.status;
       if (status === 'APPROVED') color = '#22c55e'; // Success Green
       else if (status === 'CHANGES_REQUESTED') color = '#f43f5e'; // Error Rose
-      else color = '#eab308'; // Pending Yellow
+      else if (node.metadata?.labels && node.metadata.labels.length > 0) {
+        color = `#${node.metadata.labels[0].color}`;
+      } else {
+        color = '#eab308'; // Pending Yellow
+      }
     } else if (node.hasConflicts) {
       color = '#f43f5e';
     } else if (node.lastUpdated && rootMetadata?.newestTimestamp) {

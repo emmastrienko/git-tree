@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X, ArrowUpDown, Filter, User } from 'lucide-react';
-import { GitBranch, GitPullRequest, ViewMode } from '@/types';
+import { GitBranch, GitPullRequest, ViewMode, GitHubLabel } from '@/types';
 
 interface Props {
   viewMode: ViewMode;
@@ -223,6 +223,24 @@ export const Sidebar: React.FC<Props> = ({
                       <span className={`text-[9px] whitespace-nowrap ${isSelected ? 'text-indigo-300' : 'text-slate-600'}`}>{formatShortDate(b.lastUpdated)}</span>
                     )}
                   </div>
+
+                  {viewMode === 'pr' && b.metadata?.labels && b.metadata.labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 mb-1">
+                      {b.metadata.labels.map((label: GitHubLabel) => (
+                        <span 
+                          key={label.name}
+                          className="text-[8px] px-1 py-0.5 rounded-sm border leading-none font-medium"
+                          style={{ 
+                            backgroundColor: `#${label.color}15`, 
+                            borderColor: `#${label.color}40`,
+                            color: `#${label.color}` 
+                          }}
+                        >
+                          {label.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   
                   <div className="flex items-center justify-between mt-1">
                     {viewMode === 'branches' && (
