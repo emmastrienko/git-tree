@@ -31,12 +31,17 @@ export const useGitTree = () => {
     prData, setPrData,
     branchItemsRef, prItemsRef,
     fetchingNodes,
-    activeMode, setActiveMode,
+    activeMode, setActiveMode: internalSetActiveMode,
     currentModeRef,
     stateTracker,
     resetState,
     clearModeState
   } = useTreeState();
+
+  const setActiveMode = useCallback((mode: ViewMode) => {
+    internalSetActiveMode(mode);
+    setDataVersion(v => v + 1);
+  }, [internalSetActiveMode]);
 
   const tree = activeMode === 'branches' ? branchData.tree : prData.tree;
   const items = activeMode === 'branches' ? branchData.items : prData.items;
@@ -113,6 +118,7 @@ export const useGitTree = () => {
     const signal = getNewAbortSignal();
     currentModeRef.current = mode;
     setActiveMode(mode);
+    setDataVersion(v => v + 1);
     
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
     const isNewRepo = stateTracker.current.repo !== cleanPath;
