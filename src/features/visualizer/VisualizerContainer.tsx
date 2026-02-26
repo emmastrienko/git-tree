@@ -17,6 +17,7 @@ interface VisualizerContainerProps {
   isSidebarHover: boolean;
   onHover: (name: string | null) => void;
   onSelect: (node: VisualizerNode, pos: { x: number; y: number }) => void;
+  dataVersion?: number;
 }
 
 export const VisualizerContainer: React.FC<VisualizerContainerProps> = ({
@@ -30,6 +31,7 @@ export const VisualizerContainer: React.FC<VisualizerContainerProps> = ({
   isSidebarHover,
   onHover,
   onSelect,
+  dataVersion = 0,
 }) => {
   if (!tree || error) {
     return <EmptyState loading={loading} error={error} />;
@@ -47,6 +49,7 @@ export const VisualizerContainer: React.FC<VisualizerContainerProps> = ({
         onHover={onHover}
         isFetching={loading}
         onSelect={onSelect}
+        dataVersion={dataVersion}
       />
     );
   }

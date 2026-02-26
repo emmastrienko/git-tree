@@ -18,7 +18,7 @@ function DashboardContent() {
   const { 
     loading, syncing, error, tree, items, growth, 
     fetchTree, fetchNodeDetails, clearCache,
-    setActiveMode, hasDataForMode
+    setActiveMode, hasDataForMode, dataVersion
   } = useGitTree();
 
   const {
@@ -101,6 +101,7 @@ function DashboardContent() {
           isSidebarHover={isSidebarHover}
           onHover={setHoveredNodeName}
           onSelect={handleSelect}
+          dataVersion={dataVersion}
         />
       </div>
     </MainLayout>

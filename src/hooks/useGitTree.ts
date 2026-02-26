@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { githubService } from '@/services/github';
 import { parseFileTree } from '@/utils/tree-parser';
 import { GitBranch, ViewMode, VisualizerNode, AnyRecord, GitHubCompareResponse } from '@/types';
@@ -14,6 +14,7 @@ import { useGitHubData } from './useGitHubData';
 import { useTreeState } from './useTreeState';
 
 export const useGitTree = () => {
+  const [dataVersion, setDataVersion] = useState(0);
   const { setCache, getCache, removeCache } = useCache();
   const { growth, animate, resetGrowth } = useTreeAnimation();
   const { 
@@ -273,6 +274,7 @@ export const useGitTree = () => {
             branchCursor = repoData.refs.pageInfo?.endCursor || null;
             hasMoreBranches = repoData.refs.pageInfo?.hasNextPage || false;
             if (!hasMoreBranches) stateTracker.current.hasBranches = true;
+            setDataVersion(v => v + 1);
           }
 
           if (hasMorePrs && repoData.pullRequests) {
@@ -308,6 +310,7 @@ export const useGitTree = () => {
             prCursor = repoData.pullRequests.pageInfo?.endCursor || null;
             hasMorePrs = repoData.pullRequests.pageInfo?.hasNextPage || false;
             if (!hasMorePrs) stateTracker.current.hasPrs = true;
+            setDataVersion(v => v + 1);
           }
 
           animate();
@@ -340,7 +343,7 @@ export const useGitTree = () => {
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [animate, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData, getNewAbortSignal, parseTreeAsync, branchData.items.length, prData.items.length, setBranchData, setPrData, resetState, clearModeState, branchItemsRef, prItemsRef, currentModeRef, setActiveMode, setSyncing, stateTracker]);
+  }, [animate, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData, getNewAbortSignal, parseTreeAsync, branchData.items.length, prData.items.length, setBranchData, setPrData, resetState, clearModeState, branchItemsRef, prItemsRef, currentModeRef, setActiveMode, setSyncing, stateTracker, setDataVersion]);
 
-  return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache, setActiveMode, hasDataForMode };
+  return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache, setActiveMode, hasDataForMode, dataVersion };
 };
