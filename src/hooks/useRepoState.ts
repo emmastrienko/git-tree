@@ -37,7 +37,7 @@ export const useRepoState = ({
 
   const isInitialized = useRef(false);
 
-  // Sync from SessionStorage after mount if URL params are missing
+  // Initial fetch/sync
   useEffect(() => {
     if (isInitialized.current) return;
 
@@ -63,15 +63,17 @@ export const useRepoState = ({
     isInitialized.current = true;
   }, [fetchTree, searchParams, repoUrl, viewMode]);
 
+  // Separate effect for syncing mode - only triggers when viewMode changes
+  useEffect(() => {
+    setActiveMode(viewMode);
+  }, [viewMode, setActiveMode]);
+
   // Sync state back to URL and Storage
   useEffect(() => {
     if (!isInitialized.current) return;
     
     const urlMode = searchParams.get('mode');
     const urlRepo = searchParams.get('repo');
-    
-    // Always sync mode to the tree hook
-    setActiveMode(viewMode);
     
     if (urlMode !== viewMode || urlRepo !== repoUrl) {
       const params = new URLSearchParams(searchParams.toString());
@@ -88,7 +90,7 @@ export const useRepoState = ({
         fetchTree(repoUrl, viewMode);
       }
     }
-  }, [viewMode, repoUrl, fetchTree, setActiveMode, hasDataForMode, pathname, router, searchParams]);
+  }, [viewMode, repoUrl, fetchTree, hasDataForMode, pathname, router, searchParams]);
 
   const handleFetch = useCallback(() => {
     resetSelection();
