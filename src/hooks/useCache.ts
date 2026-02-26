@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
-
-const CACHE_PREFIX = 'git_viz_';
+import { storage } from '@/utils/storage';
 
 interface CachedData {
   items: any[];
@@ -11,12 +10,12 @@ interface CachedData {
 export const useCache = () => {
   const pruneCache = useCallback(() => {
     try {
-      const keys = Object.keys(sessionStorage).filter(k => k.startsWith(CACHE_PREFIX));
+      const keys = storage.getCacheKeys();
       
       // Get all cached items with their timestamps
       const entries = keys.map(key => {
         try {
-          const raw = sessionStorage.getItem(key);
+          const raw = sessionStorage.getItem(key); // We use raw here as keys already have prefix
           const data = raw ? JSON.parse(raw) : null;
           return { key, lastAccessed: data?.lastAccessed || 0 };
         } catch {
@@ -29,11 +28,11 @@ export const useCache = () => {
 
       // Remove the oldest 50% of entries to create a buffer
       const toRemove = entries.slice(0, Math.ceil(entries.length / 2));
-      toRemove.forEach(entry => sessionStorage.removeItem(entry.key));
+      toRemove.forEach(entry => storage.removeRawKey(entry.key));
       
       console.log(`[Cache] LRU Pruning: Removed ${toRemove.length} oldest items.`);
     } catch (e) {
-      sessionStorage.clear();
+      storage.clearAll();
     }
   }, []);
 
@@ -63,12 +62,12 @@ export const useCache = () => {
     };
 
     try {
-      sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
+      storage.setCacheItem(key, JSON.stringify(minimizedValue));
     } catch (e) {
       if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
         pruneCache();
         try {
-          sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
+          storage.setCacheItem(key, JSON.stringify(minimizedValue));
         } catch {
           console.error('[Cache] Failed to save even after pruning.');
         }
@@ -79,8 +78,7 @@ export const useCache = () => {
   const getCache = useCallback((key: string) => {
     if (typeof window === 'undefined') return null;
     try {
-      const fullKey = CACHE_PREFIX + key;
-      const raw = sessionStorage.getItem(fullKey);
+      const raw = storage.getCacheItem(key);
       if (!raw) return null;
 
       const data: CachedData = JSON.parse(raw);
@@ -88,10 +86,9 @@ export const useCache = () => {
       // Update lastAccessed timestamp on read (LRU)
       data.lastAccessed = Date.now();
       try {
-        sessionStorage.setItem(fullKey, JSON.stringify(data));
+        storage.setCacheItem(key, JSON.stringify(data));
       } catch (e) {
         // If we can't update the timestamp due to quota, just return the data
-        // as the data itself is still valid.
       }
       
       return data;
@@ -99,8 +96,7 @@ export const useCache = () => {
   }, []);
 
   const removeCache = useCallback((key: string) => {
-    if (typeof window === 'undefined') return;
-    sessionStorage.removeItem(CACHE_PREFIX + key);
+    storage.removeCacheItem(key);
   }, []);
 
   return { setCache, getCache, removeCache };

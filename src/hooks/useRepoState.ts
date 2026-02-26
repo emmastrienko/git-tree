@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { ViewMode } from '@/types';
+import { storage } from '@/utils/storage';
 
 interface UseRepoStateProps {
   fetchTree: (repoUrl: string, mode: ViewMode, forceRefresh?: boolean) => Promise<void>;
@@ -43,8 +44,8 @@ export const useRepoState = ({
 
     const urlRepo = searchParams.get('repo');
     const urlMode = searchParams.get('mode');
-    const lastRepo = sessionStorage.getItem('last_repo_url');
-    const lastMode = sessionStorage.getItem('last_view_mode');
+    const lastRepo = storage.getRepoUrl();
+    const lastMode = storage.getViewMode();
 
     let finalRepo = repoUrl;
     let finalMode = viewMode;
@@ -82,8 +83,8 @@ export const useRepoState = ({
       
       router.replace(`${pathname}?${params.toString()}`);
       
-      sessionStorage.setItem('last_repo_url', repoUrl);
-      sessionStorage.setItem('last_view_mode', viewMode);
+      storage.setRepoUrl(repoUrl);
+      storage.setViewMode(viewMode);
       
       // Auto-fetch if switching to a mode that doesn't have data yet
       if (urlRepo === repoUrl && urlMode !== viewMode && !hasDataForMode(viewMode)) {
@@ -101,8 +102,8 @@ export const useRepoState = ({
     params.set('mode', viewMode);
     router.replace(`${pathname}?${params.toString()}`);
     
-    sessionStorage.setItem('last_repo_url', repoUrl);
-    sessionStorage.setItem('last_view_mode', viewMode);
+    storage.setRepoUrl(repoUrl);
+    storage.setViewMode(viewMode);
     
     fetchTree(repoUrl, viewMode, true);
   }, [repoUrl, viewMode, clearCache, fetchTree, resetSelection, pathname, router, searchParams]);
