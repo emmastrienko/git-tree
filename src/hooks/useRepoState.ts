@@ -10,6 +10,10 @@ interface UseRepoStateProps {
   hasDataForMode: (mode: ViewMode) => boolean;
 }
 
+const isValidMode = (mode: string | null): mode is ViewMode => {
+  return mode === 'branches' || mode === 'pr';
+};
+
 export const useRepoState = ({ 
   fetchTree, 
   clearCache, 
@@ -27,7 +31,8 @@ export const useRepoState = ({
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    return (searchParams.get('mode') as ViewMode) || 'branches';
+    const urlMode = searchParams.get('mode');
+    return isValidMode(urlMode) ? urlMode : 'branches';
   });
 
   const isInitialized = useRef(false);
@@ -37,9 +42,9 @@ export const useRepoState = ({
     if (isInitialized.current) return;
 
     const urlRepo = searchParams.get('repo');
-    const urlMode = searchParams.get('mode') as ViewMode;
+    const urlMode = searchParams.get('mode');
     const lastRepo = sessionStorage.getItem('last_repo_url');
-    const lastMode = sessionStorage.getItem('last_view_mode') as ViewMode;
+    const lastMode = sessionStorage.getItem('last_view_mode');
 
     let finalRepo = repoUrl;
     let finalMode = viewMode;
@@ -48,14 +53,15 @@ export const useRepoState = ({
       finalRepo = lastRepo;
       setRepoUrl(lastRepo);
     }
-    if (!urlMode && lastMode) {
+    
+    if (!urlMode && lastMode && isValidMode(lastMode)) {
       finalMode = lastMode;
       setViewMode(lastMode);
     }
 
     fetchTree(finalRepo, finalMode);
     isInitialized.current = true;
-  }, [fetchTree, searchParams]); // Run once on mount
+  }, [fetchTree, searchParams, repoUrl, viewMode]);
 
   // Sync state back to URL and Storage
   useEffect(() => {
