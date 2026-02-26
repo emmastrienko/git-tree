@@ -49,9 +49,9 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="flex-[1.4] w-full aspect-[4/3] lg:aspect-auto lg:h-[80vh] relative group">
+          <div className="flex-[1.4] w-full aspect-square md:aspect-[4/3] lg:aspect-auto lg:h-[75vh] xl:h-[80vh] relative group">
             <div className="absolute inset-0 bg-indigo-600/5 blur-[120px] rounded-full opacity-20" />
-            <div className="relative w-full h-full bg-[#03081c] border border-white/5 rounded-[40px] overflow-hidden shadow-2xl">
+            <div className="relative w-full h-full bg-[#03081c] border border-white/5 rounded-3xl md:rounded-[40px] overflow-hidden shadow-2xl transition-all duration-500 group-hover:border-white/10">
               <div className="absolute top-10 left-10 z-10 pointer-events-none">
                 <div className="text-[9px] font-mono font-bold tracking-[0.4em] uppercase text-slate-600 flex items-center gap-3">
                   <span className="w-2 h-px bg-slate-800" />
@@ -64,10 +64,10 @@ export default function LandingPage() {
         </section>
 
         {/* The Logic Section: Blueprint Style */}
-        <section className="max-w-7xl mx-auto px-8 md:px-16 py-40 border-t border-white/5">
-          <div className="grid lg:grid-cols-12 gap-20 items-start">
+        <section className="max-w-7xl mx-auto px-8 md:px-16 py-20 lg:py-40 border-t border-white/5">
+          <div className="grid lg:grid-cols-12 gap-12 lg:gap-20 items-start relative">
             
-            <div className="lg:col-span-5 space-y-8 sticky top-32">
+            <div className="lg:col-span-5 space-y-8 static lg:sticky lg:top-32 z-10 bg-[#020617] pb-10 lg:pb-0">
               <h2 className="text-5xl font-bold tracking-tighter leading-none">The Core <br /> Logic.</h2>
               <p className="text-slate-500 text-lg font-light leading-relaxed max-w-xs">
                 How we transform raw history into visual intelligence.

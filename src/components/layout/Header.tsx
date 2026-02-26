@@ -56,12 +56,12 @@ export const Header: React.FC<Props> = ({
         </div>
         
         {minimal && (
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="flex items-center gap-4 md:gap-6">
             <Link href="/about" className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-2">
-              <Info size={14} /> About
+              <Info size={14} /> <span className="hidden md:inline">About</span>
             </Link>
             <Link href="/dashboard" className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-2">
-              <LayoutDashboard size={14} /> App
+              <LayoutDashboard size={14} /> <span className="hidden md:inline">App</span>
             </Link>
           </nav>
         )}
