@@ -49,7 +49,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="flex-[1.4] w-full aspect-square md:aspect-[4/3] lg:aspect-auto lg:h-[75vh] xl:h-[80vh] relative group">
+          <div className="flex-[1.4] w-full aspect-square md:aspect-[4/3] lg:aspect-auto lg:h-[75vh] xl:h-[80vh] relative group overflow-hidden">
             <div className="absolute inset-0 bg-indigo-600/5 blur-[120px] rounded-full opacity-20" />
             <div className="relative w-full h-full bg-[#03081c] border border-white/5 rounded-3xl md:rounded-[40px] overflow-hidden shadow-2xl transition-all duration-500 group-hover:border-white/10">
               <div className="absolute top-10 left-10 z-10 pointer-events-none">
