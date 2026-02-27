@@ -1,104 +1,52 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback } from 'react';
 import { githubService } from '@/services/github';
-import { parseBranchTree, parseFileTree } from '@/utils/tree-parser';
-import { GitBranch, ViewMode, VisualizerNode, GitPullRequest } from '@/types';
+import { parseFileTree } from '@/utils/tree-parser';
+import { GitBranch, ViewMode, VisualizerNode } from '@/types';
+import { 
+  ENRICH_CHUNK_SIZE, 
+  MAX_FETCH_PAGES, 
+  TWO_YEARS_MS 
+} from '@/constants';
 
-const CACHE_PREFIX = 'git_viz_';
-
-const pruneCache = () => {
-  try {
-    const keys = Object.keys(sessionStorage).filter(k => k.startsWith(CACHE_PREFIX));
-    keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => sessionStorage.removeItem(k));
-  } catch (e) {
-    sessionStorage.clear();
-  }
-};
-
-const setCache = (key: string, value: any) => {
-  if (typeof window === 'undefined') return;
-  
-  const minimizedValue = {
-    ...value,
-    items: value.items.map((item: any) => ({
-      id: item.id,
-      number: item.number,
-      title: item.title,
-      name: item.name,
-      state: item.state,
-      draft: item.draft,
-      html_url: item.html_url,
-      ahead: item.ahead,
-      behind: item.behind,
-      review_status: item.review_status,
-      lastUpdated: item.lastUpdated,
-      author: item.author,
-      user: item.user ? { login: item.user.login, avatar_url: item.user.avatar_url } : undefined,
-      head: item.head ? { ref: item.head.ref, sha: item.head.sha } : undefined
-    }))
-  };
-
-  try {
-    sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
-  } catch (e) {
-    if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-      pruneCache();
-      try {
-        sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(minimizedValue));
-      } catch {
-        console.error('[Cache] Failed to save even after pruning.');
-      }
-    }
-  }
-};
-
-const getCache = (key: string) => {
-  if (typeof window === 'undefined') return null;
-  try {
-    const data = sessionStorage.getItem(CACHE_PREFIX + key);
-    return data ? JSON.parse(data) : null;
-  } catch { return null; }
-};
+import { useCache } from './useCache';
+import { useTreeAnimation } from './useTreeAnimation';
+import { useGitHubData } from './useGitHubData';
+import { useTreeState } from './useTreeState';
 
 export const useGitTree = () => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [growth, setGrowth] = useState(0);
-  
-  const [branchData, setBranchData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
-  const [prData, setPrData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
-  
-  const frameRef = useRef<number>(0);
-  const fetchingNodes = useRef<Set<string>>(new Set());
-  const lastFetchId = useRef<number>(0);
-  const currentModeRef = useRef<ViewMode>('branches');
-  const [activeMode, setActiveMode] = useState<ViewMode>('branches');
-  
-  // High-fidelity tracking of what's in state
-  const stateTracker = useRef<{
-    repo: string | null,
-    hasBranches: boolean,
-    hasPrs: boolean
-  }>({ repo: null, hasBranches: false, hasPrs: false });
+  const { setCache, getCache, removeCache } = useCache();
+  const { growth, animate, resetGrowth } = useTreeAnimation();
+  const { 
+    loading, setLoading, 
+    syncing, setSyncing, 
+    error, setError, 
+    getNewAbortSignal,
+    parseTreeAsync, 
+    fetchRepoData 
+  } = useGitHubData();
+
+  const {
+    branchData, setBranchData,
+    prData, setPrData,
+    branchItemsRef, prItemsRef,
+    fetchingNodes,
+    activeMode, setActiveMode,
+    currentModeRef,
+    stateTracker,
+    resetState,
+    clearModeState
+  } = useTreeState();
 
   const tree = activeMode === 'branches' ? branchData.tree : prData.tree;
   const items = activeMode === 'branches' ? branchData.items : prData.items;
 
-  const animate = useCallback(() => {
-    setGrowth(prev => {
-      if (prev >= 1) return 1;
-      frameRef.current = requestAnimationFrame(animate);
-      return prev + 0.02;
-    });
-  }, []);
-
-  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
-
   const clearCache = useCallback((repoUrl: string, mode: ViewMode) => {
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
-    sessionStorage.removeItem(CACHE_PREFIX + `${cleanPath}/${mode}`);
+    removeCache(`${cleanPath}/${mode}`);
     if (mode === 'branches') stateTracker.current.hasBranches = false;
     else stateTracker.current.hasPrs = false;
-  }, []);
+    stateTracker.current.enrichedModes.delete(mode);
+  }, [removeCache, stateTracker]);
 
   const fetchNodeDetails = useCallback(async (repoUrl: string, node: VisualizerNode) => {
     const mode = currentModeRef.current;
@@ -106,7 +54,6 @@ export const useGitTree = () => {
     
     fetchingNodes.current.add(node.name);
     const [owner, repo] = repoUrl.split('/');
-    const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
     
     try {
       const activeTree = mode === 'branches' ? branchData.tree : prData.tree;
@@ -145,7 +92,6 @@ export const useGitTree = () => {
           return curr;
         };
         const newTree = prev.tree ? updateNodeDeep(prev.tree) : null;
-        if (newItems.length > 0 && newTree) setCache(`${cleanPath}/${mode}`, { items: newItems, tree: newTree });
         return { items: newItems, tree: newTree };
       };
 
@@ -156,10 +102,10 @@ export const useGitTree = () => {
     } finally {
       fetchingNodes.current.delete(node.name);
     }
-  }, [branchData.tree, prData.tree]);
+  }, [branchData.tree, prData.tree, setBranchData, setPrData, currentModeRef, fetchingNodes]);
 
   const fetchTree = useCallback(async (repoUrl: string, mode: ViewMode, forceRefresh = false) => {
-    const fetchId = ++lastFetchId.current;
+    const signal = getNewAbortSignal();
     currentModeRef.current = mode;
     setActiveMode(mode);
     
@@ -167,15 +113,8 @@ export const useGitTree = () => {
     const isNewRepo = stateTracker.current.repo !== cleanPath;
     
     if (isNewRepo) {
+      resetState(true);
       stateTracker.current.repo = cleanPath;
-      stateTracker.current.hasBranches = false;
-      stateTracker.current.hasPrs = false;
-    }
-
-    // Immediate return if already in state
-    if (!forceRefresh) {
-      if (mode === 'branches' && stateTracker.current.hasBranches) return;
-      if (mode === 'pr' && stateTracker.current.hasPrs) return;
     }
 
     const [owner, repo] = cleanPath.split('/');
@@ -184,98 +123,201 @@ export const useGitTree = () => {
     const cacheKey = `${cleanPath}/${mode}`;
     if (!forceRefresh) {
       const cached = getCache(cacheKey);
-      if (cached) {
+      if (cached && cached.items?.length > 0) {
         if (mode === 'branches') { setBranchData(cached); stateTracker.current.hasBranches = true; }
         else { setPrData(cached); stateTracker.current.hasPrs = true; }
-        setGrowth(1); setError(null); setLoading(false);
+        stateTracker.current.enrichedModes.add(mode);
+        resetGrowth(1); setError(null); setLoading(false);
         return;
       }
     }
 
-    setLoading(true); setError(null); setGrowth(0);
-    cancelAnimationFrame(frameRef.current);
+    const hasItems = mode === 'branches' ? branchData.items.length > 0 : prData.items.length > 0;
+    const isFullyFetched = mode === 'branches' ? stateTracker.current.hasBranches : stateTracker.current.hasPrs;
+    const isEnriched = stateTracker.current.enrichedModes.has(mode);
 
-    if (mode === 'branches') { setBranchData({ tree: null, items: [] }); stateTracker.current.hasBranches = false; }
-    else { setPrData({ tree: null, items: [] }); stateTracker.current.hasPrs = false; }
+    if (!forceRefresh && hasItems && isFullyFetched && isEnriched) {
+      return;
+    }
+
+    setLoading(true); setError(null); resetGrowth(0);
+
+    const needsBranches = mode === 'branches' && (forceRefresh || branchData.items.length === 0);
+    const needsPrs = mode === 'pr' && (forceRefresh || prData.items.length === 0);
+
+    if (needsBranches) clearModeState('branches');
+    if (needsPrs) clearModeState('pr');
 
     try {
-      const [repoData, openPRs] = await Promise.all([
-        githubService.getRepo(owner, repo),
-        githubService.getPullRequests(owner, repo)
-      ]);
-      if (fetchId !== lastFetchId.current) return;
-      const base = repoData.default_branch;
+      let base = stateTracker.current.base || 'main';
+      let baseSha = stateTracker.current.baseSha || '';
+      const now = Date.now();
 
-      if (mode === 'branches') {
-        const branchList = await githubService.getBranches(owner, repo);
-        const initial = branchList.map(b => ({ name: b.name, sha: b.commit.sha, ahead: 0, behind: 0, isBase: b.name === base }));
-        setBranchData({ items: initial, tree: parseBranchTree(initial, base) });
-        stateTracker.current.hasBranches = true;
-        animate();
+      const enrichData = async (itemsToEnrich: any[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
+        setSyncing(true);
+        try {
+          if (!currentBaseSha) return;
+          
+          for (let i = 0; i < itemsToEnrich.length; i += ENRICH_CHUNK_SIZE) {
+            if (signal.aborted) return;
+            const chunk = itemsToEnrich.slice(i, i + ENRICH_CHUNK_SIZE);
+            
+            let headShas: string[] = [];
+            if (!isPrMode) {
+              headShas = chunk
+                .filter(item => {
+                  if (item.name === currentBase || !item.sha) return false;
+                  const lastUpdate = item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0;
+                  return !lastUpdate || (now - lastUpdate <= TWO_YEARS_MS);
+                })
+                .map(item => item.sha);
+            } else {
+              headShas = chunk.filter(p => p.head?.sha).map(p => p.head.sha);
+            }
 
-        let enriched = [...initial];
-        for (let i = 0; i < branchList.length; i += 50) {
-          if (fetchId !== lastFetchId.current) return;
-          const chunk = branchList.slice(i, i + 50);
-          const results = await Promise.all(chunk.map(async (b): Promise<GitBranch | null> => {
-            if (b.name === base) return { name: b.name, sha: b.commit.sha, ahead: 0, behind: 0, isBase: true } as GitBranch;
-            try {
-              const comp = await githubService.compare(owner, repo, base, b.name);
-              const pr = openPRs.find(p => p.head.ref === b.name);
-              const latest = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
-              return {
-                name: b.name, sha: b.commit.sha, mergeBaseSha: comp.merge_base_commit?.sha,
-                history: comp.commits?.map((c: any) => c.sha) || [], ahead: comp.ahead_by, behind: comp.behind_by,
-                isMerged: comp.status === 'identical' || comp.status === 'behind', hasConflicts: pr?.mergeable_state === 'dirty',
-                lastUpdated: latest?.commit.author.date || pr?.updated_at,
-                author: latest ? { login: latest.author?.login || latest.commit.author.name, avatarUrl: latest.author?.avatar_url } : (pr ? { login: pr.user.login, avatarUrl: pr.user.avatar_url } : undefined)
-              } as GitBranch;
-            } catch (e: any) { if (e.message?.includes('403')) throw e; return null; }
-          }));
+            if (headShas.length > 0) {
+              const { results } = await githubService.compareBatch(owner, repo, currentBaseSha, headShas, signal);
+              if (signal.aborted) return;
 
-          if (fetchId !== lastFetchId.current) return;
-          results.forEach(res => { if (res) { const idx = enriched.findIndex(b => b.name === res.name); if (idx !== -1) enriched[idx] = { ...enriched[idx], ...res }; } });
-          const currentTree = parseBranchTree([...enriched], base);
-          setBranchData({ items: [...enriched], tree: currentTree });
-          setCache(cacheKey, { items: [...enriched], tree: currentTree });
+              const currentItems = isPrMode ? prItemsRef.current : branchItemsRef.current;
+              const newItems = [...currentItems];
+              
+              results?.forEach((res: any) => {
+                if (res.success) {
+                  const idx = newItems.findIndex(item => (isPrMode ? item.head?.sha : item.sha) === res.head);
+                  if (idx !== -1) {
+                    newItems[idx] = { 
+                      ...newItems[idx], 
+                      ahead: res.data.ahead_by, behind: res.data.behind_by, 
+                      history: res.data.commits?.map((c: any) => c.sha) || [],
+                      isMerged: res.data.status === 'identical' || res.data.status === 'behind'
+                    };
+                  }
+                }
+              });
+
+              const nodesToParse = isPrMode 
+                ? newItems.map(pr => ({ 
+                    name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead, behind: pr.behind, 
+                    history: pr.history, lastUpdated: pr.lastUpdated, author: pr.author, 
+                    mergeBaseSha: pr.baseRefName === currentBase ? undefined : pr.baseRefName, 
+                    metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
+                  } as any))
+                : newItems;
+
+              const newTree = await parseTreeAsync(nodesToParse, currentBase);
+              if (newItems.length > 0 && newTree) setCache(`${cleanPath}/${isPrMode ? 'pr' : 'branches'}`, { items: newItems, tree: newTree });
+              
+              if (isPrMode) {
+                setPrData({ items: newItems, tree: newTree });
+              } else {
+                setBranchData({ items: newItems, tree: newTree });
+              }
+              
+              stateTracker.current.enrichedModes.add(isPrMode ? 'pr' : 'branches');
+            }
+          }
+        } finally {
+          if (!signal.aborted) setSyncing(false);
         }
-      } else {
-        const initialPRs = openPRs.map(pr => ({ ...pr, ahead: 0, behind: 0, review_status: 'PENDING', lastUpdated: pr.updated_at, author: { login: pr.user.login, avatarUrl: pr.user.avatar_url } }));
-        const initialNodes: GitBranch[] = initialPRs.map(pr => ({ name: `${pr.head.ref} #${pr.number}`, sha: pr.head.sha, ahead: 0, behind: 0, lastUpdated: pr.lastUpdated, author: pr.author, mergeBaseSha: pr.base.ref === base ? undefined : pr.base.ref, metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.base.ref } } as any));
-        setPrData({ items: initialPRs, tree: parseBranchTree(initialNodes, base) });
-        stateTracker.current.hasPrs = true;
-        animate();
+      };
 
-        let enriched = [...initialPRs];
-        for (let i = 0; i < openPRs.length; i += 15) {
-          if (fetchId !== lastFetchId.current) return;
-          const chunk = openPRs.slice(i, i + 15);
-          const results = await Promise.all(chunk.map(async (pr): Promise<any | null> => {
-            try {
-              const [comp, reviews] = await Promise.all([ githubService.compare(owner, repo, base, pr.head.sha).catch(() => null), githubService.getPullRequestReviews(owner, repo, pr.number).catch(() => []) ]);
-              const latestReview = reviews && reviews.length > 0 ? reviews[reviews.length - 1].state : 'PENDING';
-              const latestCommit = comp?.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
-              return { id: pr.id, ahead: comp?.ahead_by || 0, behind: comp?.behind_by || 0, review_status: latestReview, lastUpdated: latestCommit?.commit.author.date || pr.updated_at, author: latestCommit ? { login: latestCommit.author?.login || latestCommit.commit.author.name, avatarUrl: latestCommit.author?.avatar_url } : { login: pr.user.login, avatarUrl: pr.user.avatar_url } };
-            } catch { return null; }
-          }));
+      const fetchAndProcessPages = async () => {
+        let branchCursor: string | null = null;
+        let prCursor: string | null = null;
+        let pageCount = 0;
+        let hasMoreBranches = needsBranches || (!stateTracker.current.hasBranches && mode === 'branches');
+        let hasMorePrs = needsPrs || (!stateTracker.current.hasPrs && mode === 'pr');
 
-          if (fetchId !== lastFetchId.current) return;
-          results.forEach(res => { if (res) { const idx = enriched.findIndex(p => p.id === res.id); if (idx !== -1) enriched[idx] = { ...enriched[idx], ...res }; } });
-          const prNodes: GitBranch[] = enriched.map(pr => ({ name: `${pr.head.ref} #${pr.number}`, sha: pr.head.sha, ahead: pr.ahead, behind: pr.behind, lastUpdated: pr.lastUpdated, author: pr.author, mergeBaseSha: pr.base.ref === base ? undefined : pr.base.ref, metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.draft, baseBranch: pr.base.ref } } as any));
-          const currentTree = parseBranchTree(prNodes, base);
-          setPrData({ items: [...enriched], tree: currentTree });
-          setCache(cacheKey, { items: [...enriched], tree: currentTree });
+        while ((hasMoreBranches || hasMorePrs) && pageCount < MAX_FETCH_PAGES) {
+          if (signal.aborted) return;
+          const repoData = await fetchRepoData(owner, repo, { branchCursor, prCursor, hasMoreBranches, hasMorePrs, signal });
+          
+          if (pageCount === 0) {
+            base = repoData.defaultBranchRef?.name || 'main';
+            baseSha = repoData.defaultBranchRef?.target?.oid || '';
+            stateTracker.current.base = base;
+            stateTracker.current.baseSha = baseSha;
+          }
+
+          let newBranches: any[] = [];
+          let newPRs: any[] = [];
+
+          if (hasMoreBranches && repoData.refs) {
+            const nodes = repoData.refs.nodes || [];
+            newBranches = nodes.map((b: any) => ({ 
+              name: b.name, sha: b.target?.oid || '', ahead: 0, behind: 0, isBase: b.name === base,
+              lastUpdated: b.target?.authoredDate,
+              author: b.target?.author?.user ? { login: b.target.author.user.login, avatarUrl: b.target.author.user.avatarUrl } : undefined
+            }));
+            
+            const allItems = [...branchItemsRef.current, ...newBranches];
+            const mappedItems: GitBranch[] = allItems.map(b => ({ ...b, history: b.history || [] }));
+            const newTree = await parseTreeAsync(mappedItems, base);
+            setBranchData({ items: allItems, tree: newTree });
+            
+            branchCursor = repoData.refs.pageInfo?.endCursor || null;
+            hasMoreBranches = repoData.refs.pageInfo?.hasNextPage || false;
+            if (!hasMoreBranches) stateTracker.current.hasBranches = true;
+          }
+
+          if (hasMorePrs && repoData.pullRequests) {
+            const nodes = repoData.pullRequests.nodes || [];
+            newPRs = nodes.map((pr: any) => ({ 
+              ...pr, html_url: pr.url, draft: pr.isDraft, 
+              head: { ref: pr.headRefName, sha: pr.headRef?.target?.oid || '' },
+              user: { login: pr.author?.login, avatar_url: pr.author?.avatarUrl },
+              ahead: 0, behind: 0, review_status: pr.reviews?.nodes[0]?.state || 'PENDING', lastUpdated: pr.updatedAt, 
+              author: pr.author ? { login: pr.author.login, avatarUrl: pr.author.avatarUrl } : undefined
+            }));
+
+            const allPRs = [...prItemsRef.current, ...newPRs];
+            const prNodes: GitBranch[] = allPRs.map((pr: any) => ({ 
+              name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead || 0, behind: pr.behind || 0, 
+              history: pr.history || [], lastUpdated: pr.lastUpdated, author: pr.author, 
+              mergeBaseSha: pr.baseRefName === base ? undefined : pr.baseRefName, 
+              metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
+            } as any));
+            
+            const newTree = await parseTreeAsync(prNodes, base);
+            setPrData({ items: allPRs, tree: newTree });
+
+            prCursor = repoData.pullRequests.pageInfo?.endCursor || null;
+            hasMorePrs = repoData.pullRequests.pageInfo?.hasNextPage || false;
+            if (!hasMorePrs) stateTracker.current.hasPrs = true;
+          }
+
+          animate();
+          pageCount++;
+
+          if (mode === 'branches' && newBranches.length > 0) {
+            await enrichData(newBranches, base, baseSha, false);
+          } else if (mode === 'pr' && newPRs.length > 0) {
+            await enrichData(newPRs, base, baseSha, true);
+          }
+
+          if (!hasMoreBranches && !hasMorePrs) break;
+        }
+      };
+
+      await fetchAndProcessPages();
+
+      if (!signal.aborted && !stateTracker.current.enrichedModes.has(mode)) {
+        const currentItems = mode === 'branches' ? branchItemsRef.current : prItemsRef.current;
+        if (currentItems.length > 0) {
+          await enrichData(currentItems, base, baseSha, mode === 'pr');
         }
       }
+
     } catch (err: any) {
-      if (fetchId !== lastFetchId.current) return;
+      if (err.name === 'AbortError') return;
       if (err.message?.includes('403')) setError('RATE_LIMIT');
       else if (err.message?.includes('404')) setError('REPO_NOT_FOUND');
       else setError('FETCH_ERROR');
     } finally {
-      if (fetchId === lastFetchId.current) setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [animate]);
+  }, [animate, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData, getNewAbortSignal, parseTreeAsync, branchData.items.length, prData.items.length, setBranchData, setPrData, resetState, clearModeState, branchItemsRef, prItemsRef, currentModeRef, setActiveMode, setSyncing, stateTracker]);
 
-  return { loading, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
+  return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
 };

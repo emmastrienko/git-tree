@@ -1,16 +1,27 @@
 import { GitBranch, VisualizerNode } from '@/types';
+import { THIRTY_DAYS_MS } from '@/constants';
 
 export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): VisualizerNode => {
   const nodes = new Map<string, VisualizerNode>();
+  const branchToNodeName = new Map<string, string>();
   
-  branches.forEach(b => nodes.set(b.name, {
-    ...b,
-    type: b.name === defaultBranch ? 'trunk' : 'branch',
-    children: []
-  }));
+  branches.forEach(b => {
+    nodes.set(b.name, {
+      ...b,
+      type: b.name === defaultBranch ? 'trunk' : 'branch',
+      children: []
+    });
+    // For PRs, metadata.headBranch is the actual branch name
+    if (b.metadata?.headBranch) {
+      branchToNodeName.set(b.metadata.headBranch, b.name);
+    } else {
+      branchToNodeName.set(b.name, b.name);
+    }
+  });
 
   if (!nodes.has(defaultBranch)) {
     nodes.set(defaultBranch, { name: defaultBranch, type: 'trunk', sha: '', ahead: 0, behind: 0, children: [] });
+    branchToNodeName.set(defaultBranch, defaultBranch);
   }
 
   const trunk = nodes.get(defaultBranch)!;
@@ -23,7 +34,7 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
   // We make the bounds 'sticky' by checking if we already had extreme values in the trunk metadata
   const prevMeta = trunk.metadata || {};
   const currentNewest = timestamps.length ? Math.max(...timestamps) : Date.now();
-  const currentOldest = timestamps.length ? Math.min(...timestamps) : Date.now() - (30 * 24 * 60 * 60 * 1000);
+  const currentOldest = timestamps.length ? Math.min(...timestamps) : Date.now() - THIRTY_DAYS_MS;
 
   trunk.metadata = {
     maxBehind: Math.max(...branches.map(b => b.behind), 1),
@@ -40,15 +51,32 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     let bestParent = trunk;
     let maxScore = -1;
 
-    for (const p of branches) {
-      if (p.name === b.name || p.isBase) continue;
+    // Check explicit base branch (from PR metadata)
+    if (b.metadata?.baseBranch) {
+      if (b.metadata.baseBranch === defaultBranch) {
+        bestParent = trunk;
+        maxScore = Infinity; // Explicitly target default branch
+      } else {
+        const parentNodeName = branchToNodeName.get(b.metadata.baseBranch);
+        if (parentNodeName && nodes.has(parentNodeName)) {
+          bestParent = nodes.get(parentNodeName)!;
+          maxScore = bestParent.ahead || 0;
+        }
+      }
+    }
 
-      const isAncestor = bHistory.has(p.sha) || 
-                        (b.metadata?.baseBranch === p.name); // Match PR to its target branch
-
-      if (isAncestor && p.ahead > maxScore) {
-        maxScore = p.ahead;
-        bestParent = nodes.get(p.name)!;
+    // Search for the best ancestor among all other branches
+    // Only search if we haven't already found an explicit parent that is the trunk
+    if (maxScore !== Infinity) {
+      for (const p of branches) {
+        if (p.name === b.name || p.name === defaultBranch) continue;
+        
+        const isAncestor = (p.sha && bHistory.has(p.sha)) || (b.metadata?.baseBranch === (p.metadata?.headBranch || p.name));
+        
+        if (isAncestor && p.ahead > maxScore) {
+          maxScore = p.ahead;
+          bestParent = nodes.get(p.name)!;
+        }
       }
     }
 
@@ -59,6 +87,8 @@ export const parseBranchTree = (branches: GitBranch[], defaultBranch: string): V
     }
     bestParent.children.push(node);
   });
+
+
 
   return trunk;
 };

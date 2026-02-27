@@ -1,77 +1,148 @@
 import { GitBranch, GitPullRequest } from '@/types';
+import { GITHUB_PER_PAGE, MAX_BRANCH_PAGES, MAX_PR_PAGES } from '@/constants';
 
-const fetcher = async <T>(url: string): Promise<T> => {
-  console.log(`[GitHub API] Fetching: ${url}`);
-  const res = await fetch(url);
+export const fetcher = async <T>(url: string, signal?: AbortSignal): Promise<T> => {
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     console.error(`[GitHub API] Error ${res.status} for ${url}`);
     throw new Error(`GitHub API: ${res.status}`);
   }
   const data = await res.json();
-  console.log(`[GitHub API] Success: ${url}`, data);
   return data;
 };
 
 export const githubService = {
-  getRepo: (owner: string, repo: string) => 
-    fetcher<any>(`/api/github/repos/${owner}/${repo}`),
+  getRepo: (owner: string, repo: string, signal?: AbortSignal) => 
+    fetcher<any>(`/api/github/repos/${owner}/${repo}`, signal),
 
-  getBranches: async (owner: string, repo: string) => {
+  getBranches: async (owner: string, repo: string, signal?: AbortSignal) => {
     let all: any[] = [];
     let page = 1;
-    const MAX_PAGES = 10; 
     
     try {
-      while (page <= MAX_PAGES) {
-        const url = `/api/github/repos/${owner}/${repo}/branches?per_page=100&page=${page}`;
-        const pageData = await fetcher<any[]>(url);
+      while (page <= MAX_BRANCH_PAGES) {
+        const url = `/api/github/repos/${owner}/${repo}/branches?per_page=${GITHUB_PER_PAGE}&page=${page}`;
+        const pageData = await fetcher<any[]>(url, signal);
         
         if (!pageData || pageData.length === 0) break;
         
         all = [...all, ...pageData];
-        if (pageData.length < 100) break;
+        if (pageData.length < GITHUB_PER_PAGE) break;
         page++;
       }
     } catch (e) {
+      if ((e as any).name === 'AbortError') throw e;
       console.warn(`[GitHub Service] Partial branches fetch: ${all.length} items. Error:`, e);
       if (all.length === 0) throw e;
     }
     return all;
   },
 
-  getPullRequests: async (owner: string, repo: string) => {
+  getPullRequests: async (owner: string, repo: string, signal?: AbortSignal) => {
     let all: any[] = [];
     let page = 1;
-    const MAX_PAGES = 5; 
     
     try {
-      while (page <= MAX_PAGES) {
-        const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=100&page=${page}`;
-        const pageData = await fetcher<any[]>(url);
+      while (page <= MAX_PR_PAGES) {
+        const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=${GITHUB_PER_PAGE}&page=${page}`;
+        const pageData = await fetcher<any[]>(url, signal);
         
         if (!pageData || pageData.length === 0) break;
         
         all = [...all, ...pageData];
-        if (pageData.length < 100) break;
+        if (pageData.length < GITHUB_PER_PAGE) break;
         page++;
       }
     } catch (e) {
+      if ((e as any).name === 'AbortError') throw e;
       console.warn(`[GitHub Service] Partial PRs fetch: ${all.length} items. Error:`, e);
       if (all.length === 0) throw e;
     }
     return all;
   },
 
-  getPullRequestReviews: (owner: string, repo: string, pullNumber: number) =>
-    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`),
+  getPullRequestReviews: (owner: string, repo: string, pullNumber: number, signal?: AbortSignal) =>
+    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, signal),
 
-  getPullRequestFiles: (owner: string, repo: string, pullNumber: number) =>
-    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=100`),
+  getPullRequestFiles: (owner: string, repo: string, pullNumber: number, signal?: AbortSignal) =>
+    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=${GITHUB_PER_PAGE}`, signal),
 
-  compare: (owner: string, repo: string, base: string, head: string) => {
-    // Slashes in branch names must be encoded for the Compare API
+  compare: (owner: string, repo: string, base: string, head: string, signal?: AbortSignal) => {
     const encodedBase = encodeURIComponent(base);
     const encodedHead = encodeURIComponent(head);
-    return fetcher<any>(`/api/github/repos/${owner}/${repo}/compare/${encodedBase}...${encodedHead}`);
+    return fetcher<any>(`/api/github/repos/${owner}/${repo}/compare/${encodedBase}...${encodedHead}`, signal);
   },
+
+  compareBatch: (owner: string, repo: string, base: string, heads: string[], signal?: AbortSignal) => {
+    return fetch('/api/github/compare-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner, repo, base, heads }),
+      signal
+    }).then(res => res.json());
+  },
+
+  graphql: (query: string, variables: any = {}, signal?: AbortSignal) => {
+    return fetch('/api/github/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      signal
+    }).then(res => res.json());
+  },
+
+  getBulkData: async (owner: string, repo: string, branchCursor: string | null = null, prCursor: string | null = null, includeBranches = true, includePrs = true, signal?: AbortSignal) => {
+    const query = `
+      query($owner: String!, $repo: String!, $branchCursor: String, $prCursor: String, $includeBranches: Boolean!, $includePrs: Boolean!) {
+        repository(owner: $owner, name: $repo) {
+          defaultBranchRef { 
+            name 
+            target { ... on Commit { oid } }
+          }
+          refs(refPrefix: "refs/heads/", first: 100, after: $branchCursor) @include(if: $includeBranches) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              name
+              target {
+                ... on Commit {
+                  oid
+                  authoredDate
+                  author {
+                    user { login avatarUrl }
+                  }
+                }
+              }
+            }
+          }
+          pullRequests(first: 100, states: OPEN, after: $prCursor) @include(if: $includePrs) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              number
+              title
+              state
+              url
+              isDraft
+              baseRefName
+              headRefName
+              headRef {
+                target { ... on Commit { oid } }
+              }
+              author { login avatarUrl }
+              updatedAt
+              reviews(last: 1) {
+                nodes { state }
+              }
+            }
+          }
+        }
+      }
+    `;
+    return githubService.graphql(query, { owner, repo, branchCursor, prCursor, includeBranches, includePrs }, signal);
+  }
 };
