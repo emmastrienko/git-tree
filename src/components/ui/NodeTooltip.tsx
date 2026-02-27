@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useLayoutEffect, useRef, useState, useEffect } from 'react';
-import { VisualizerNode } from '@/types';
+import Image from 'next/image';
+import { VisualizerNode, GitHubLabel } from '@/types';
 import { GitCommit, AlertCircle, X, Activity, ExternalLink, ChevronRight, Copy, Check, Clock, FileText, Plus, Minus, Loader2 } from 'lucide-react';
 
 interface NodeTooltipProps {
@@ -34,9 +35,14 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
   const [tailPos, setTailPos] = useState({ x: -6, y: 80 });
   const [isMobile, setIsMobile] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
   
   const githubLink = `https://github.com/${repoUrl}/tree/${node.name}`;
   const relativeTime = formatRelativeTime(node.lastUpdated);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   useLayoutEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -211,7 +217,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
                       Merged
                     </span>
                   )}
-                  {relativeTime && (
+                  {relativeTime && hasMounted && (
                     <span className="flex items-center gap-1 text-[10px] text-slate-500 font-medium ml-1">
                       <Clock size={10} /> {relativeTime}
                     </span>
@@ -228,7 +234,24 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
                 <X size={18} />
               </button>
             </div>
-            <div className="max-h-[60vh] overflow-y-auto">
+            <div className="max-h-[60vh] overflow-y-auto text-slate-100">
+              {node.metadata?.labels && node.metadata.labels.length > 0 && (
+                <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex flex-wrap gap-1.5">
+                  {node.metadata.labels.map((label: GitHubLabel) => (
+                    <span 
+                      key={label.name}
+                      className="text-[9px] px-2 py-0.5 rounded-full border font-medium"
+                      style={{ 
+                        backgroundColor: `#${label.color}20`, 
+                        borderColor: `#${label.color}40`,
+                        color: `#${label.color}` 
+                      }}
+                    >
+                      {label.name}
+                    </span>
+                  ))}
+                </div>
+              )}
               {statsContent}
             </div>
           </div>
@@ -259,7 +282,7 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
                   Merged
                 </span>
               )}
-              {relativeTime && (
+              {relativeTime && hasMounted && (
                 <span className="flex items-center gap-1 text-[10px] text-slate-500 font-medium ml-1">
                   <Clock size={10} /> {relativeTime}
                 </span>
@@ -282,13 +305,32 @@ export const NodeTooltip: React.FC<NodeTooltipProps> = ({ node, position, repoUr
         {node.author && (
           <div className="px-4 py-2 bg-white/[0.03] border-b border-white/5 flex items-center gap-2">
             {node.author.avatarUrl ? (
-              <img src={node.author.avatarUrl} className="w-5 h-5 rounded-full border border-white/10" alt="" />
+              <Image src={node.author.avatarUrl} width={20} height={20} className="rounded-full border border-white/10" alt={node.author.login} />
             ) : (
               <div className="w-5 h-5 rounded-full bg-white/5 border border-white/10" />
             )}
             <span className="text-[11px] text-slate-400">
               Last committed by <span className="font-bold text-slate-200">{node.author.login}</span>
             </span>
+          </div>
+        )}
+
+        {/* Labels Section */}
+        {node.metadata?.labels && node.metadata.labels.length > 0 && (
+          <div className="px-4 py-2 bg-white/[0.01] border-b border-white/5 flex flex-wrap gap-1.5">
+            {node.metadata.labels.map((label: GitHubLabel) => (
+              <span 
+                key={label.name}
+                className="text-[9px] px-2 py-0.5 rounded-full border font-medium transition-colors"
+                style={{ 
+                  backgroundColor: `#${label.color}20`, 
+                  borderColor: `#${label.color}40`,
+                  color: `#${label.color}` 
+                }}
+              >
+                {label.name}
+              </span>
+            ))}
           </div>
         )}
 

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import Image from 'next/image';
 import { GitBranch as GitBranchIcon, GitPullRequest as GitPRIcon, Search, X, ArrowUpDown, Filter, User } from 'lucide-react';
-import { GitBranch, GitPullRequest, ViewMode } from '@/types';
+import { GitBranch, GitPullRequest, ViewMode, GitHubLabel } from '@/types';
 
 interface Props {
   viewMode: ViewMode;
@@ -40,6 +41,11 @@ export const Sidebar: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('recent');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   // Extract unique authors for filtering
   const authors = useMemo(() => {
@@ -130,7 +136,7 @@ export const Sidebar: React.FC<Props> = ({
                   title={author.login}
                 >
                   {author.avatarUrl ? (
-                    <img src={author.avatarUrl} className="w-5 h-5 rounded-full border border-white/10" alt={author.login} />
+                    <Image src={author.avatarUrl} width={20} height={20} className="rounded-full border border-white/10" alt={author.login} />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center border border-white/5 text-[8px] text-slate-400">
                       <User size={8} />
@@ -213,10 +219,28 @@ export const Sidebar: React.FC<Props> = ({
                     <div className={`text-[12px] font-medium truncate transition-colors ${isSelected ? 'text-white' : 'text-slate-300 group-hover:text-slate-100'}`}>
                       {name}
                     </div>
-                    {b.lastUpdated && (
+                    {b.lastUpdated && hasMounted && (
                       <span className={`text-[9px] whitespace-nowrap ${isSelected ? 'text-indigo-300' : 'text-slate-600'}`}>{formatShortDate(b.lastUpdated)}</span>
                     )}
                   </div>
+
+                  {viewMode === 'pr' && b.metadata?.labels && b.metadata.labels.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 mb-1">
+                      {b.metadata.labels.map((label: GitHubLabel) => (
+                        <span 
+                          key={label.name}
+                          className="text-[8px] px-1 py-0.5 rounded-sm border leading-none font-medium"
+                          style={{ 
+                            backgroundColor: `#${label.color}15`, 
+                            borderColor: `#${label.color}40`,
+                            color: `#${label.color}` 
+                          }}
+                        >
+                          {label.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   
                   <div className="flex items-center justify-between mt-1">
                     {viewMode === 'branches' && (
@@ -235,9 +259,11 @@ export const Sidebar: React.FC<Props> = ({
                     {login && (
                       <div className="flex items-center gap-1.5 ml-auto">
                         <span className={`text-[9px] hidden group-hover:inline ${isSelected ? 'text-indigo-300' : 'text-slate-600'}`}>{login}</span>
-                        <img 
+                        <Image 
                           src={b.author?.avatarUrl || b.user?.avatar_url} 
-                          className={`w-3.5 h-3.5 rounded-full border ${isSelected || filterAuthor === login ? 'border-indigo-500' : 'border-white/10'}`} 
+                          width={14}
+                          height={14}
+                          className={`rounded-full border ${isSelected || filterAuthor === login ? 'border-indigo-500' : 'border-white/10'}`} 
                           alt="" 
                         />
                       </div>

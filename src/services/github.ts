@@ -1,4 +1,4 @@
-import { GitBranch, GitPullRequest } from '@/types';
+import { GitBranch, GitPullRequest, GitHubRepoResponse, GitHubCompareResponse, GitHubFileResponse, GitHubBulkResponse, AnyRecord } from '@/types';
 import { GITHUB_PER_PAGE, MAX_BRANCH_PAGES, MAX_PR_PAGES } from '@/constants';
 
 export const fetcher = async <T>(url: string, signal?: AbortSignal): Promise<T> => {
@@ -13,16 +13,16 @@ export const fetcher = async <T>(url: string, signal?: AbortSignal): Promise<T> 
 
 export const githubService = {
   getRepo: (owner: string, repo: string, signal?: AbortSignal) => 
-    fetcher<any>(`/api/github/repos/${owner}/${repo}`, signal),
+    fetcher<GitHubRepoResponse>(`/api/github/repos/${owner}/${repo}`, signal),
 
   getBranches: async (owner: string, repo: string, signal?: AbortSignal) => {
-    let all: any[] = [];
+    let all: AnyRecord[] = [];
     let page = 1;
     
     try {
       while (page <= MAX_BRANCH_PAGES) {
         const url = `/api/github/repos/${owner}/${repo}/branches?per_page=${GITHUB_PER_PAGE}&page=${page}`;
-        const pageData = await fetcher<any[]>(url, signal);
+        const pageData = await fetcher<AnyRecord[]>(url, signal);
         
         if (!pageData || pageData.length === 0) break;
         
@@ -31,7 +31,7 @@ export const githubService = {
         page++;
       }
     } catch (e) {
-      if ((e as any).name === 'AbortError') throw e;
+      if (e instanceof Error && e.name === 'AbortError') throw e;
       console.warn(`[GitHub Service] Partial branches fetch: ${all.length} items. Error:`, e);
       if (all.length === 0) throw e;
     }
@@ -39,13 +39,13 @@ export const githubService = {
   },
 
   getPullRequests: async (owner: string, repo: string, signal?: AbortSignal) => {
-    let all: any[] = [];
+    let all: AnyRecord[] = [];
     let page = 1;
     
     try {
       while (page <= MAX_PR_PAGES) {
         const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=${GITHUB_PER_PAGE}&page=${page}`;
-        const pageData = await fetcher<any[]>(url, signal);
+        const pageData = await fetcher<AnyRecord[]>(url, signal);
         
         if (!pageData || pageData.length === 0) break;
         
@@ -54,7 +54,7 @@ export const githubService = {
         page++;
       }
     } catch (e) {
-      if ((e as any).name === 'AbortError') throw e;
+      if (e instanceof Error && e.name === 'AbortError') throw e;
       console.warn(`[GitHub Service] Partial PRs fetch: ${all.length} items. Error:`, e);
       if (all.length === 0) throw e;
     }
@@ -62,15 +62,15 @@ export const githubService = {
   },
 
   getPullRequestReviews: (owner: string, repo: string, pullNumber: number, signal?: AbortSignal) =>
-    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, signal),
+    fetcher<AnyRecord[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, signal),
 
   getPullRequestFiles: (owner: string, repo: string, pullNumber: number, signal?: AbortSignal) =>
-    fetcher<any[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=${GITHUB_PER_PAGE}`, signal),
+    fetcher<GitHubFileResponse[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=${GITHUB_PER_PAGE}`, signal),
 
   compare: (owner: string, repo: string, base: string, head: string, signal?: AbortSignal) => {
     const encodedBase = encodeURIComponent(base);
     const encodedHead = encodeURIComponent(head);
-    return fetcher<any>(`/api/github/repos/${owner}/${repo}/compare/${encodedBase}...${encodedHead}`, signal);
+    return fetcher<GitHubCompareResponse>(`/api/github/repos/${owner}/${repo}/compare/${encodedBase}...${encodedHead}`, signal);
   },
 
   compareBatch: (owner: string, repo: string, base: string, heads: string[], signal?: AbortSignal) => {
@@ -79,10 +79,10 @@ export const githubService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ owner, repo, base, heads }),
       signal
-    }).then(res => res.json());
+    }).then(res => res.json() as Promise<{ results: AnyRecord[] }>);
   },
 
-  graphql: (query: string, variables: any = {}, signal?: AbortSignal) => {
+  graphql: (query: string, variables: Record<string, any> = {}, signal?: AbortSignal) => {
     return fetch('/api/github/graphql', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -138,11 +138,14 @@ export const githubService = {
               reviews(last: 1) {
                 nodes { state }
               }
+              labels(first: 5) {
+                nodes { name color }
+              }
             }
           }
         }
       }
     `;
-    return githubService.graphql(query, { owner, repo, branchCursor, prCursor, includeBranches, includePrs }, signal);
+    return githubService.graphql(query, { owner, repo, branchCursor, prCursor, includeBranches, includePrs }, signal) as Promise<GitHubBulkResponse>;
   }
 };

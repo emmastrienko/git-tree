@@ -27,6 +27,7 @@ interface ThreeVisualizerProps {
   isDimmed?: boolean;
   onHover?: (name: string | null) => void;
   onSelect?: (node: VisualizerNode, pos: { x: number; y: number }) => void;
+  dataVersion?: number;
 }
 
 export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({ 
@@ -35,7 +36,8 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
   hoveredNodeName, 
   filterAuthor,
   onHover,
-  isDimmed 
+  isDimmed,
+  dataVersion = 0
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -55,14 +57,30 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
   
   const assetsRef = useRef<(THREE.BufferGeometry | THREE.Material | THREE.Texture)[]>([]);
 
+  // Use refs for callbacks to avoid re-initializing the scene when they change
+  const onHoverRef = useRef(onHover);
+  const onSelectRef = useRef(onSelect);
+  const hoveredNodeNameRef = useRef(hoveredNodeName);
+
+  useEffect(() => { onHoverRef.current = onHover; }, [onHover]);
+  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+  useEffect(() => { hoveredNodeNameRef.current = hoveredNodeName; }, [hoveredNodeName]);
+
   const getNodeStyles = (node: VisualizerNode, rootMeta: any, isHighlighted: boolean) => {
     let color = node.type === 'trunk' ? THEME.trunk : THEME.primary;
     let emissiveIntensity = isHighlighted ? 0.8 : 0.05;
 
     const pr = node.metadata?.prNumber;
     if (pr) {
-      const status = node.metadata.status;
-      color = status === 'APPROVED' ? '#22c55e' : (status === 'CHANGES_REQUESTED' ? '#f43f5e' : '#eab308');
+      const status = node.metadata?.status;
+      if (status === 'APPROVED') color = '#22c55e';
+      else if (status === 'CHANGES_REQUESTED') color = '#f43f5e';
+      else if (node.metadata?.labels && node.metadata.labels.length > 0) {
+        // Use the color of the first label
+        color = `#${node.metadata.labels[0].color}`;
+      } else {
+        color = '#eab308'; // Default pending yellow
+      }
       if (!isHighlighted) emissiveIntensity = 0.3;
     } else if (node.hasConflicts) {
       color = THEME.conflict;
@@ -277,7 +295,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       container.style.cursor = isDown ? 'grabbing' : (hit ? 'pointer' : 'grab');
       if (!isDown) {
         const next = hit ? hit.node.name : null;
-        if (next !== hoveredNodeName) onHover?.(next);
+        if (next !== hoveredNodeNameRef.current) onHoverRef.current?.(next);
       }
     };
     const onDown = (e: MouseEvent) => { isDown = true; start = { x: e.clientX, y: e.clientY }; };
@@ -285,7 +303,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       isDown = false;
       if (Math.abs(e.clientX - start.x) < 5 && Math.abs(e.clientY - start.y) < 5) {
         const hit = getTarget(e.clientX, e.clientY);
-        if (hit && onSelect) onSelect(hit.node, { x: hit.x, y: hit.y });
+        if (hit && onSelectRef.current) onSelectRef.current(hit.node, { x: hit.x, y: hit.y });
       }
     };
 
@@ -334,7 +352,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
-  }, [tree]);
+  }, [dataVersion]);
 
   useEffect(() => {
     nodesMap.current.forEach((data, name) => {

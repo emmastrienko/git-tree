@@ -7,16 +7,17 @@ interface MainLayoutProps {
   sidebar?: React.ReactNode;
   header?: (props: { onMenuClick: () => void }) => React.ReactNode;
   footer?: React.ReactNode;
+  scrollable?: boolean;
 }
 
-export const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, header, footer }) => {
+export const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, header, footer, scrollable = false }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex flex-col h-screen w-full bg-app-bg text-slate-200 overflow-hidden">
+    <div className={`flex flex-col ${scrollable ? 'min-h-screen' : 'h-screen'} w-full bg-[#020617] text-slate-200 ${scrollable ? '' : 'overflow-hidden'}`}>
       {header?.({ onMenuClick: () => setIsSidebarOpen(!isSidebarOpen) })}
       
-      <div className="flex flex-1 min-h-0 relative">
+      <div className={`flex ${scrollable ? 'flex-col' : 'flex-1 min-h-0'} relative`}>
         {/* Sidebar Overlay for Mobile */}
         {isSidebarOpen && (
           <div 
@@ -26,15 +27,17 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, heade
         )}
 
         {/* Sidebar Container */}
-        <div className={`
-          absolute inset-y-0 left-0 z-40 lg:relative lg:translate-x-0 transition-transform duration-300 ease-in-out
-          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          w-72 sm:w-80
-        `}>
-          {sidebar}
-        </div>
+        {sidebar && (
+          <div className={`
+            absolute inset-y-0 left-0 z-40 lg:relative lg:translate-x-0 transition-transform duration-300 ease-in-out
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            w-72 sm:w-80
+          `}>
+            {sidebar}
+          </div>
+        )}
 
-        <main className="flex-1 relative bg-app-bg overflow-hidden">
+        <main className={`flex-1 relative ${scrollable ? '' : 'overflow-hidden'}`}>
           {children}
         </main>
       </div>
