@@ -1,3 +1,49 @@
+export interface GitHubRepoResponse {
+  name: string;
+  default_branch: string;
+  description: string;
+  stargazers_count: number;
+}
+
+export type AnyRecord = Record<string, any>;
+
+export interface GitHubCompareResponse {
+  status: string;
+  ahead_by: number;
+  behind_by: number;
+  total_commits: number;
+  commits: AnyRecord[];
+  files: GitHubFileResponse[];
+}
+
+export interface GitHubFileResponse {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+}
+
+export interface GitHubBulkResponse {
+  data: {
+    repository: {
+      defaultBranchRef: {
+        name: string;
+        target: { oid: string };
+      };
+      refs?: {
+        pageInfo: { hasNextPage: boolean; endCursor: string };
+        nodes: AnyRecord[];
+      };
+      pullRequests?: {
+        pageInfo: { hasNextPage: boolean; endCursor: string };
+        nodes: AnyRecord[];
+      };
+    };
+  };
+  errors?: any[];
+}
+
 export type ViewMode = 'branches' | 'pr';
 
 export interface GitHubUser {
@@ -24,6 +70,30 @@ export interface GitPullRequest {
   lastUpdated?: string;
 }
 
+export interface GitHubAuthor {
+  login: string;
+  avatarUrl?: string;
+}
+
+export interface GitHubLabel {
+  name: string;
+  color: string;
+}
+
+export interface NodeMetadata {
+  prNumber?: number;
+  status?: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING';
+  displayTitle?: string;
+  isDraft?: boolean;
+  baseBranch?: string;
+  headBranch?: string;
+  newestTimestamp?: number;
+  oldestTimestamp?: number;
+  maxBehind?: number;
+  labels?: GitHubLabel[];
+  [key: string]: any;
+}
+
 export interface GitBranch {
   name: string;
   sha: string;
@@ -39,12 +109,9 @@ export interface GitBranch {
   deletions?: number;
   filesChanged?: number;
   lastUpdated?: string;
-  author?: {
-    login: string;
-    avatarUrl?: string;
-  };
+  author?: GitHubAuthor;
   fileTree?: VisualizerNode;
-  metadata?: any;
+  metadata?: NodeMetadata;
 }
 
 export interface VisualizerNode {
@@ -57,15 +124,12 @@ export interface VisualizerNode {
   relativeAhead?: number;
   hasConflicts?: boolean;
   isMerged?: boolean;
-  metadata?: any;
+  metadata?: NodeMetadata;
   discoveryIndex?: number;
   additions?: number;
   deletions?: number;
   filesChanged?: number;
   lastUpdated?: string;
-  author?: {
-    login: string;
-    avatarUrl?: string;
-  };
+  author?: GitHubAuthor;
   fileTree?: VisualizerNode;
 }

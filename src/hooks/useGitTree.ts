@@ -1,7 +1,7 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { githubService } from '@/services/github';
 import { parseFileTree } from '@/utils/tree-parser';
-import { GitBranch, ViewMode, VisualizerNode } from '@/types';
+import { GitBranch, ViewMode, VisualizerNode, AnyRecord, GitHubCompareResponse } from '@/types';
 import { 
   ENRICH_CHUNK_SIZE, 
   MAX_FETCH_PAGES, 
@@ -14,6 +14,7 @@ import { useGitHubData } from './useGitHubData';
 import { useTreeState } from './useTreeState';
 
 export const useGitTree = () => {
+  const [dataVersion, setDataVersion] = useState(0);
   const { setCache, getCache, removeCache } = useCache();
   const { growth, animate, resetGrowth } = useTreeAnimation();
   const { 
@@ -30,12 +31,17 @@ export const useGitTree = () => {
     prData, setPrData,
     branchItemsRef, prItemsRef,
     fetchingNodes,
-    activeMode, setActiveMode,
+    activeMode, setActiveMode: internalSetActiveMode,
     currentModeRef,
     stateTracker,
     resetState,
     clearModeState
   } = useTreeState();
+
+  const setActiveMode = useCallback((mode: ViewMode) => {
+    internalSetActiveMode(mode);
+    setDataVersion(v => v + 1);
+  }, [internalSetActiveMode]);
 
   const tree = activeMode === 'branches' ? branchData.tree : prData.tree;
   const items = activeMode === 'branches' ? branchData.items : prData.items;
@@ -47,6 +53,10 @@ export const useGitTree = () => {
     else stateTracker.current.hasPrs = false;
     stateTracker.current.enrichedModes.delete(mode);
   }, [removeCache, stateTracker]);
+
+  const hasDataForMode = useCallback((mode: ViewMode) => {
+    return mode === 'branches' ? branchData.items.length > 0 : prData.items.length > 0;
+  }, [branchData.items.length, prData.items.length]);
 
   const fetchNodeDetails = useCallback(async (repoUrl: string, node: VisualizerNode) => {
     const mode = currentModeRef.current;
@@ -66,13 +76,13 @@ export const useGitTree = () => {
 
       if (mode === 'pr' && prNumber) {
         prFiles = await githubService.getPullRequestFiles(owner, repo, prNumber);
-        additions = prFiles.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
-        deletions = prFiles.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
+        additions = prFiles.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.additions, 0) || 0;
+        deletions = prFiles.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.deletions, 0) || 0;
         filesChanged = prFiles.length || 0;
       } else {
         const comp = await githubService.compare(owner, repo, baseBranch, node.name);
-        additions = comp.files?.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
-        deletions = comp.files?.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
+        additions = comp.files?.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.additions, 0) || 0;
+        deletions = comp.files?.reduce((acc: number, f: GitHubCompareResponse['files'][0]) => acc + f.deletions, 0) || 0;
         filesChanged = comp.files?.length || 0;
         const latestCommit = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1] : null;
         if (latestCommit) lastUpdated = latestCommit.commit.author.date;
@@ -80,7 +90,7 @@ export const useGitTree = () => {
 
       const details = { additions, deletions, filesChanged, lastUpdated, fileTree: prFiles ? parseFileTree(prFiles) : undefined };
 
-      const updateFn = (prev: {tree: VisualizerNode | null, items: any[]}) => {
+      const updateFn = (prev: {tree: VisualizerNode | null, items: AnyRecord[]}) => {
         const newItems = prev.items.map(item => {
           const isMatch = mode === 'branches' ? item.name === node.name : item.number === prNumber;
           return isMatch ? { ...item, ...details } : item;
@@ -108,6 +118,7 @@ export const useGitTree = () => {
     const signal = getNewAbortSignal();
     currentModeRef.current = mode;
     setActiveMode(mode);
+    setDataVersion(v => v + 1);
     
     const cleanPath = repoUrl.toLowerCase().replace(/\/$/, '').trim();
     const isNewRepo = stateTracker.current.repo !== cleanPath;
@@ -153,7 +164,7 @@ export const useGitTree = () => {
       let baseSha = stateTracker.current.baseSha || '';
       const now = Date.now();
 
-      const enrichData = async (itemsToEnrich: any[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
+      const enrichData = async (itemsToEnrich: AnyRecord[], currentBase: string, currentBaseSha: string, isPrMode: boolean) => {
         setSyncing(true);
         try {
           if (!currentBaseSha) return;
@@ -182,14 +193,14 @@ export const useGitTree = () => {
               const currentItems = isPrMode ? prItemsRef.current : branchItemsRef.current;
               const newItems = [...currentItems];
               
-              results?.forEach((res: any) => {
+              results?.forEach((res: AnyRecord) => {
                 if (res.success) {
                   const idx = newItems.findIndex(item => (isPrMode ? item.head?.sha : item.sha) === res.head);
                   if (idx !== -1) {
                     newItems[idx] = { 
                       ...newItems[idx], 
                       ahead: res.data.ahead_by, behind: res.data.behind_by, 
-                      history: res.data.commits?.map((c: any) => c.sha) || [],
+                      history: res.data.commits?.map((c: AnyRecord) => c.sha) || [],
                       isMerged: res.data.status === 'identical' || res.data.status === 'behind'
                     };
                   }
@@ -200,10 +211,19 @@ export const useGitTree = () => {
                 ? newItems.map(pr => ({ 
                     name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead, behind: pr.behind, 
                     history: pr.history, lastUpdated: pr.lastUpdated, author: pr.author, 
+                    isMerged: pr.isMerged,
                     mergeBaseSha: pr.baseRefName === currentBase ? undefined : pr.baseRefName, 
-                    metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
-                  } as any))
-                : newItems;
+                    metadata: { 
+                      prNumber: pr.number, 
+                      status: pr.review_status, 
+                      displayTitle: pr.title, 
+                      isDraft: pr.isDraft, 
+                      baseBranch: pr.baseRefName, 
+                      headBranch: pr.headRefName,
+                      labels: pr.labels?.nodes || []
+                    } 
+                  }))
+                : (newItems as unknown as GitBranch[]);
 
               const newTree = await parseTreeAsync(nodesToParse, currentBase);
               if (newItems.length > 0 && newTree) setCache(`${cleanPath}/${isPrMode ? 'pr' : 'branches'}`, { items: newItems, tree: newTree });
@@ -240,44 +260,55 @@ export const useGitTree = () => {
             stateTracker.current.baseSha = baseSha;
           }
 
-          let newBranches: any[] = [];
-          let newPRs: any[] = [];
+          let newBranches: AnyRecord[] = [];
+          let newPRs: AnyRecord[] = [];
 
           if (hasMoreBranches && repoData.refs) {
             const nodes = repoData.refs.nodes || [];
-            newBranches = nodes.map((b: any) => ({ 
+            newBranches = nodes.map((b: AnyRecord) => ({ 
               name: b.name, sha: b.target?.oid || '', ahead: 0, behind: 0, isBase: b.name === base,
+              isMerged: false,
               lastUpdated: b.target?.authoredDate,
               author: b.target?.author?.user ? { login: b.target.author.user.login, avatarUrl: b.target.author.user.avatarUrl } : undefined
             }));
             
             const allItems = [...branchItemsRef.current, ...newBranches];
-            const mappedItems: GitBranch[] = allItems.map(b => ({ ...b, history: b.history || [] }));
+            const mappedItems: GitBranch[] = allItems.map(b => ({ ...b, history: b.history || [], isMerged: b.isMerged }));
             const newTree = await parseTreeAsync(mappedItems, base);
             setBranchData({ items: allItems, tree: newTree });
             
             branchCursor = repoData.refs.pageInfo?.endCursor || null;
             hasMoreBranches = repoData.refs.pageInfo?.hasNextPage || false;
             if (!hasMoreBranches) stateTracker.current.hasBranches = true;
+            setDataVersion(v => v + 1);
           }
 
           if (hasMorePrs && repoData.pullRequests) {
             const nodes = repoData.pullRequests.nodes || [];
-            newPRs = nodes.map((pr: any) => ({ 
+            newPRs = nodes.map((pr: AnyRecord) => ({ 
               ...pr, html_url: pr.url, draft: pr.isDraft, 
               head: { ref: pr.headRefName, sha: pr.headRef?.target?.oid || '' },
               user: { login: pr.author?.login, avatar_url: pr.author?.avatarUrl },
-              ahead: 0, behind: 0, review_status: pr.reviews?.nodes[0]?.state || 'PENDING', lastUpdated: pr.updatedAt, 
+              ahead: 0, behind: 0, isMerged: pr.state === 'MERGED', review_status: pr.reviews?.nodes[0]?.state || 'PENDING', lastUpdated: pr.updatedAt, 
               author: pr.author ? { login: pr.author.login, avatarUrl: pr.author.avatarUrl } : undefined
             }));
 
             const allPRs = [...prItemsRef.current, ...newPRs];
-            const prNodes: GitBranch[] = allPRs.map((pr: any) => ({ 
+            const prNodes: GitBranch[] = allPRs.map((pr: AnyRecord) => ({ 
               name: `${pr.headRefName} #${pr.number}`, sha: pr.head?.sha || '', ahead: pr.ahead || 0, behind: pr.behind || 0, 
               history: pr.history || [], lastUpdated: pr.lastUpdated, author: pr.author, 
+              isMerged: pr.isMerged,
               mergeBaseSha: pr.baseRefName === base ? undefined : pr.baseRefName, 
-              metadata: { prNumber: pr.number, status: pr.review_status, displayTitle: pr.title, isDraft: pr.isDraft, baseBranch: pr.baseRefName, headBranch: pr.headRefName } 
-            } as any));
+              metadata: { 
+                prNumber: pr.number, 
+                status: pr.review_status, 
+                displayTitle: pr.title, 
+                isDraft: pr.isDraft, 
+                baseBranch: pr.baseRefName, 
+                headBranch: pr.headRefName,
+                labels: pr.labels?.nodes || []
+              } 
+            }));
             
             const newTree = await parseTreeAsync(prNodes, base);
             setPrData({ items: allPRs, tree: newTree });
@@ -285,6 +316,7 @@ export const useGitTree = () => {
             prCursor = repoData.pullRequests.pageInfo?.endCursor || null;
             hasMorePrs = repoData.pullRequests.pageInfo?.hasNextPage || false;
             if (!hasMorePrs) stateTracker.current.hasPrs = true;
+            setDataVersion(v => v + 1);
           }
 
           animate();
@@ -317,7 +349,7 @@ export const useGitTree = () => {
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [animate, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData, getNewAbortSignal, parseTreeAsync, branchData.items.length, prData.items.length, setBranchData, setPrData, resetState, clearModeState, branchItemsRef, prItemsRef, currentModeRef, setActiveMode, setSyncing, stateTracker]);
+  }, [animate, getCache, setCache, resetGrowth, setLoading, setError, fetchRepoData, getNewAbortSignal, parseTreeAsync, branchData.items.length, prData.items.length, setBranchData, setPrData, resetState, clearModeState, branchItemsRef, prItemsRef, currentModeRef, setActiveMode, setSyncing, stateTracker, setDataVersion]);
 
-  return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache };
+  return { loading, syncing, error, tree, items, growth, fetchTree, fetchNodeDetails, clearCache, setActiveMode, hasDataForMode, dataVersion };
 };
