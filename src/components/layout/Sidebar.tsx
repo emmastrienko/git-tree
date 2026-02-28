@@ -7,7 +7,7 @@ import { GitBranch, GitPullRequest, ViewMode, GitHubLabel } from '@/types';
 
 interface Props {
   viewMode: ViewMode;
-  items: any[];
+  items: (GitBranch | GitPullRequest)[];
   onHover?: (name: string | null) => void;
   onSelect?: (name: string) => void;
   filterAuthor?: string | null;
@@ -41,17 +41,18 @@ export const Sidebar: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('recent');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [hasMounted, setHasMounted] = useState(false);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
 
   // Extract unique authors for filtering
   const authors = useMemo(() => {
     const map = new Map<string, string>();
     items.forEach(item => {
-      const author = item.author || (item.user ? { login: item.user.login, avatarUrl: item.user.avatar_url } : null);
+      let author = null;
+      if ('author' in item && item.author) {
+        author = item.author;
+      } else if ('user' in item && item.user) {
+        author = { login: item.user.login, avatarUrl: item.user.avatar_url };
+      }
+      
       if (author?.login) {
         map.set(author.login, author.avatarUrl || '');
       }
@@ -85,7 +86,13 @@ export const Sidebar: React.FC<Props> = ({
   }, [items, sortBy, sortDirection, viewMode]);
 
   const filteredItems = sortedItems.filter(item => {
-    const login = item.author?.login || item.user?.login;
+    let login = null;
+    if ('author' in item && item.author) {
+      login = item.author.login;
+    } else if ('user' in item && item.user) {
+      login = item.user.login;
+    }
+    
     const matchesAuthor = !filterAuthor || login === filterAuthor;
     
     const name = (viewMode === 'branches' 
@@ -194,10 +201,11 @@ export const Sidebar: React.FC<Props> = ({
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 scrollbar-thin">
         <div className="flex flex-col gap-0.5" onMouseLeave={() => onHover?.(null)}>
           {filteredItems.map((item, i) => {
-            const b = item as any;
+            const b = item as GitBranch & GitPullRequest;
             const name = viewMode === 'branches' ? b.name : (b.title || b.metadata?.displayTitle || 'Untitled PR');
             const hoverKey = viewMode === 'branches' ? b.name : `${b.head?.ref} #${b.number}`;
-            const login = b.author?.login || b.user?.login;
+            const login = ('author' in b && b.author?.login) || ('user' in b && b.user?.login);
+            const avatarUrl = ('author' in b && b.author?.avatarUrl) || ('user' in b && b.user?.avatar_url) || '';
             const isSelected = selectedNodeName === hoverKey;
 
             return (
@@ -219,7 +227,7 @@ export const Sidebar: React.FC<Props> = ({
                     <div className={`text-[12px] font-medium truncate transition-colors ${isSelected ? 'text-white' : 'text-slate-300 group-hover:text-slate-100'}`}>
                       {name}
                     </div>
-                    {b.lastUpdated && hasMounted && (
+                    {b.lastUpdated && (
                       <span className={`text-[9px] whitespace-nowrap ${isSelected ? 'text-indigo-300' : 'text-slate-600'}`}>{formatShortDate(b.lastUpdated)}</span>
                     )}
                   </div>
@@ -260,7 +268,7 @@ export const Sidebar: React.FC<Props> = ({
                       <div className="flex items-center gap-1.5 ml-auto">
                         <span className={`text-[9px] hidden group-hover:inline ${isSelected ? 'text-indigo-300' : 'text-slate-600'}`}>{login}</span>
                         <Image 
-                          src={b.author?.avatarUrl || b.user?.avatar_url} 
+                          src={avatarUrl} 
                           width={14}
                           height={14}
                           className={`rounded-full border ${isSelected || filterAuthor === login ? 'border-indigo-500' : 'border-white/10'}`} 

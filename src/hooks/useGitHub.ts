@@ -1,5 +1,6 @@
 import useSWR from 'swr';
 import { githubService, fetcher } from '@/services/github';
+import { GitHubFileResponse } from '@/types';
 
 export const useRepo = (owner: string, repo: string) => {
   const { data, error, isLoading } = useSWR(
@@ -31,14 +32,14 @@ export const useNodeDetails = (repoUrl: string, nodeName: string, mode: 'branche
     async (k) => {
       if (k.mode === 'pr') {
         const prFiles = await githubService.getPullRequestFiles(owner, repo, prNumber!);
-        const additions = prFiles.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
-        const deletions = prFiles.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
+        const additions = prFiles.reduce((acc: number, f: GitHubFileResponse) => acc + f.additions, 0) || 0;
+        const deletions = prFiles.reduce((acc: number, f: GitHubFileResponse) => acc + f.deletions, 0) || 0;
         return { additions, deletions, filesChanged: prFiles.length, files: prFiles };
       } else {
         const comp = await githubService.compare(owner, repo, baseBranch || 'main', nodeName);
-        const additions = comp.files?.reduce((acc: number, f: any) => acc + f.additions, 0) || 0;
-        const deletions = comp.files?.reduce((acc: number, f: any) => acc + f.deletions, 0) || 0;
-        const lastUpdated = comp.commits?.length > 0 ? comp.commits[comp.commits.length - 1].commit.author.date : undefined;
+        const additions = comp.files?.reduce((acc: number, f: GitHubFileResponse) => acc + f.additions, 0) || 0;
+        const deletions = comp.files?.reduce((acc: number, f: GitHubFileResponse) => acc + f.deletions, 0) || 0;
+        const lastUpdated = comp.commits?.length > 0 ? (comp.commits[comp.commits.length - 1].commit as { author: { date: string } }).author.date : undefined;
         return { additions, deletions, filesChanged: comp.files?.length || 0, files: comp.files, lastUpdated };
       }
     }

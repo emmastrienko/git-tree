@@ -35,12 +35,12 @@ export default function ParserDocs() {
 
               <h2>The Core Challenge</h2>
               <p>
-                A standard repository log doesn&apos;t explicitly define which branch was "forked" from where. It only knows that Branch A and Branch B share a common ancestor. Our engine must infer this topology by analyzing commit histories and comparison metrics.
+                A standard repository log doesn&apos;t explicitly define which branch was &quot;forked&quot; from where. It only knows that Branch A and Branch B share a common ancestor. Our engine must infer this topology by analyzing commit histories and comparison metrics.
               </p>
 
               <h2>Scoring Engine Logic</h2>
               <p>
-                For every pair of branches, we calculate a "Parent Likelihood Score" based on:
+                For every pair of branches, we calculate a &quot;Parent Likelihood Score&quot; based on:
               </p>
               <ul>
                 <li><strong>Ahead/Behind Metrics:</strong> A branch with 0 behind and X ahead is likely a direct child of its comparison target.</li>

@@ -35,12 +35,12 @@ export default function TopologyDocs() {
 
               <h2>The Spatial Projection Engine</h2>
               <p>
-                Unlike 2D visualizations that suffer from branch "overlap" as the tree scales, our 3D engine uses a specialized distribution model to ensure spatial clarity.
+                Unlike 2D visualizations that suffer from branch &quot;overlap&quot; as the tree scales, our 3D engine uses a specialized distribution model to ensure spatial clarity.
               </p>
 
               <h2>Golden Angle Distribution</h2>
               <p>
-                To prevent branches from "clumping" together in 3D space, we utilize the <strong>Golden Angle</strong> (~137.5 degrees). When a parent node has multiple children, they are projected along a spherical spiral. This ensures:
+                To prevent branches from &quot;clumping&quot; together in 3D space, we utilize the <strong>Golden Angle</strong> (~137.5 degrees). When a parent node has multiple children, they are projected along a spherical spiral. This ensures:
               </p>
               <ul>
                 <li><strong>Maximum Separation:</strong> Each branch is placed in a unique spatial vector.</li>
@@ -55,7 +55,7 @@ export default function TopologyDocs() {
 
               <h2>Why 3D?</h2>
               <p>
-                3D depth provides an extra dimension to encode data—such as branch age (Z-axis depth) or commit intensity. It transforms the repository from a list of files into an "environment" that can be explored.
+                3D depth provides an extra dimension to encode data—such as branch age (Z-axis depth) or commit intensity. It transforms the repository from a list of files into an &quot;environment&quot; that can be explored.
               </p>
             </article>
           </div>

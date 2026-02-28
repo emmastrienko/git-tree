@@ -5,14 +5,14 @@ export interface GitHubRepoResponse {
   stargazers_count: number;
 }
 
-export type AnyRecord = Record<string, any>;
+export type AnyRecord = Record<string, unknown>;
 
 export interface GitHubCompareResponse {
   status: string;
   ahead_by: number;
   behind_by: number;
   total_commits: number;
-  commits: AnyRecord[];
+  commits: { sha: string; [key: string]: unknown }[];
   files: GitHubFileResponse[];
 }
 
@@ -24,24 +24,77 @@ export interface GitHubFileResponse {
   changes: number;
 }
 
+export interface GitHubRefNode {
+  name: string;
+  target: {
+    oid: string;
+    authoredDate: string;
+    author: {
+      user: {
+        login: string;
+        avatarUrl: string;
+      } | null;
+    };
+  };
+}
+
+export interface GitHubPRNode {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  isDraft: boolean;
+  baseRefName: string;
+  headRefName: string;
+  headRef: {
+    target: {
+      oid: string;
+    };
+  } | null;
+  author: {
+    login: string;
+    avatarUrl: string;
+  } | null;
+  updatedAt: string;
+  reviews: {
+    nodes: { state: string }[];
+  };
+  labels: {
+    nodes: GitHubLabel[];
+  };
+}
+
 export interface GitHubBulkResponse {
   data: {
     repository: {
       defaultBranchRef: {
         name: string;
         target: { oid: string };
-      };
+      } | null;
       refs?: {
         pageInfo: { hasNextPage: boolean; endCursor: string };
-        nodes: AnyRecord[];
+        nodes: GitHubRefNode[];
       };
       pullRequests?: {
         pageInfo: { hasNextPage: boolean; endCursor: string };
-        nodes: AnyRecord[];
+        nodes: GitHubPRNode[];
       };
     };
   };
-  errors?: any[];
+  errors?: { message: string }[];
+}
+
+export interface CompareBatchResult {
+  head: string;
+  success: boolean;
+  status?: number;
+  error?: string;
+  data?: {
+    ahead_by: number;
+    behind_by: number;
+    status: string;
+    commits: { sha: string }[];
+  };
 }
 
 export type ViewMode = 'branches' | 'pr';
@@ -59,15 +112,23 @@ export interface GitPullRequest {
   draft?: boolean;
   mergeable_state?: string;
   review_status?: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING';
+  headRefName?: string;
+  baseRefName?: string;
+  isDraft?: boolean;
+  labels?: { nodes: GitHubLabel[] };
   head: {
     ref: string;
     sha: string;
   };
   user: GitHubUser;
+  author?: GitHubAuthor;
+  id?: string | number;
   // Metadata for tree-parsing
   ahead: number;
   behind: number;
   lastUpdated?: string;
+  history?: string[];
+  isMerged?: boolean;
 }
 
 export interface GitHubAuthor {
@@ -91,7 +152,7 @@ export interface NodeMetadata {
   oldestTimestamp?: number;
   maxBehind?: number;
   labels?: GitHubLabel[];
-  [key: string]: any;
+  [key: string]: string | number | boolean | GitHubLabel[] | undefined | unknown;
 }
 
 export interface GitBranch {

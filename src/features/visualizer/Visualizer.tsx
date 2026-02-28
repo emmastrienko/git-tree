@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { VisualizerNode } from '@/types';
+import { VisualizerNode, NodeMetadata } from '@/types';
 import { 
   INITIAL_SCALE, ZOOM_SPEED, MIN_SCALE, MAX_SCALE, 
   SMOOTH_LIMIT_STEP, CANVAS_WIDTH, CANVAS_HEIGHT, TRUNK_WIDTH,
@@ -49,7 +49,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       setSmoothLimit(0);
       setTransform({ x: 0, y: 0, scale: INITIAL_SCALE });
     }
-  }, [tree.name]);
+  }, [tree.name, tree.children?.length]);
 
   const handleWheel = (e: React.WheelEvent) => {
     const delta = -e.deltaY * ZOOM_SPEED;
@@ -149,7 +149,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     };
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
-  }, [tree.children?.length]);
+  }, [tree.children?.length, tree.name]);
 
   const getSide = (name: string) => {
     let hash = 0;
@@ -177,7 +177,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     ctx.stroke();
     ctx.translate(0, -currentLen);
     if (node.type === 'file') {
-      const size = (Math.log10((node.metadata?.additions || 0) + 1) * 4 + 2) * progress;
+      const size = (Math.log10(((node.metadata?.additions as number) || 0) + 1) * 4 + 2) * progress;
       ctx.beginPath();
       ctx.arc(0, 0, size, 0, Math.PI * 2);
       ctx.fillStyle = '#60a5fa';
@@ -209,7 +209,7 @@ export const Visualizer: React.FC<VisualizerProps> = ({
     depth: number,
     currentAngle: number,
     revealedLimit: number,
-    rootMetadata: any,
+    rootMetadata: NodeMetadata | null | undefined,
     index: number = 0
   ) {
     if (node.discoveryIndex !== undefined && node.discoveryIndex > revealedLimit) return;
@@ -249,8 +249,8 @@ export const Visualizer: React.FC<VisualizerProps> = ({
       color = '#f43f5e';
     } else if (node.lastUpdated && rootMetadata?.newestTimestamp) {
       const current = new Date(node.lastUpdated).getTime();
-      const newest = rootMetadata.newestTimestamp;
-      const oldest = rootMetadata.oldestTimestamp;
+      const newest = (rootMetadata.newestTimestamp as number) || Date.now();
+      const oldest = (rootMetadata.oldestTimestamp as number) || newest - 1;
       const range = Math.max(newest - oldest, 1);
       const ratio = Math.max(0, Math.min(1, (current - oldest) / range));
       

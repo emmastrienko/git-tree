@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { githubService } from '@/services/github';
 import { parseBranchTree } from '@/utils/tree-parser';
-import { GitBranch, ViewMode, VisualizerNode } from '@/types';
-import { ENRICH_CHUNK_SIZE, MAX_FETCH_PAGES, TWO_YEARS_MS } from '@/constants';
+import { GitBranch, VisualizerNode } from '@/types';
 
 // Singleton worker for tree parsing
 let treeWorker: Worker | null = null;
@@ -77,8 +76,8 @@ export const useGitHubData = () => {
       if (errors) console.warn('[useGitHubData] GraphQL partial errors:', errors);
       if (!data?.repository) throw new Error(errors?.[0]?.message || 'Repository not found');
       return data.repository;
-    } catch (err) {
-      if ((err as any).name === 'AbortError') throw err;
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') throw err;
       console.error('[useGitHubData] Fatal error during fetch:', err);
       throw err;
     }

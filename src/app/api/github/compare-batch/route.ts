@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
                     ahead_by: json.ahead_by,
                     behind_by: json.behind_by,
                     status: json.status,
-                    commits: json.commits?.map((c: any) => ({ sha: c.sha }))
+                    commits: json.commits?.map((c: { sha: string }) => ({ sha: c.sha }))
                   }
                 });
               } else {
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     }));
 
     return NextResponse.json({ results });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: 'Invalid Request' }, { status: 400 });
   }
 }

@@ -3,7 +3,7 @@
 import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { VisualizerNode } from '@/types';
+import { VisualizerNode, NodeMetadata } from '@/types';
 import { 
   THREE_TREE_LAYOUT, THREE_CAMERA, THREE_LIGHTS, 
   THREE_ANIMATION, THREE_LOD, COLOR_RATIO_LEVELS
@@ -66,7 +66,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { hoveredNodeNameRef.current = hoveredNodeName; }, [hoveredNodeName]);
 
-  const getNodeStyles = (node: VisualizerNode, rootMeta: any, isHighlighted: boolean) => {
+  const getNodeStyles = (node: VisualizerNode, rootMeta: NodeMetadata | null | undefined, isHighlighted: boolean) => {
     let color = node.type === 'trunk' ? THEME.trunk : THEME.primary;
     let emissiveIntensity = isHighlighted ? 0.8 : 0.05;
 
@@ -110,7 +110,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
     return { color, emissiveIntensity };
   };
 
-  const createLabel = (name: string, depth: number, len: number): { sprite: THREE.Sprite, assets: any[] } => {
+  const createLabel = (name: string, depth: number, len: number): { sprite: THREE.Sprite, assets: (THREE.Texture | THREE.Material)[] } => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
     canvas.width = 256; canvas.height = 64; 
@@ -178,7 +178,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       assets.push(geo, mat);
 
       if (node.type === 'file') {
-        const size = Math.log10((node.metadata?.additions || 0) + 1) * 5 + 3;
+        const size = Math.log10(((node.metadata?.additions as number) || 0) + 1) * 5 + 3;
         const leafGeo = new THREE.SphereGeometry(size, 8, 8);
         const leafMat = new THREE.MeshStandardMaterial({ color: '#60a5fa', emissive: '#60a5fa', emissiveIntensity: 0.2 });
         const leaf = new THREE.Mesh(leafGeo, leafMat);
@@ -196,7 +196,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       return group;
     };
 
-    const buildBranch = (node: VisualizerNode, depth = 0, rootMeta: any = null): THREE.Group => {
+    const buildBranch = (node: VisualizerNode, depth = 0, rootMeta: NodeMetadata | null = null): THREE.Group => {
       const isTrunk = node.type === 'trunk';
       const val = node.relativeAhead ?? node.ahead;
       const len = isTrunk ? THREE_TREE_LAYOUT.trunkLength : (Math.log10(val + 1) * 100 + 80) * Math.pow(0.92, depth);
@@ -352,7 +352,7 @@ export const ThreeVisualizer: React.FC<ThreeVisualizerProps> = ({
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
-  }, [dataVersion]);
+  }, [dataVersion, tree, hoveredNodeName, isDimmed]);
 
   useEffect(() => {
     nodesMap.current.forEach((data, name) => {

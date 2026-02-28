@@ -1,4 +1,4 @@
-import { GitBranch, GitPullRequest, GitHubRepoResponse, GitHubCompareResponse, GitHubFileResponse, GitHubBulkResponse, AnyRecord } from '@/types';
+import { GitHubRepoResponse, GitHubCompareResponse, GitHubFileResponse, GitHubBulkResponse, CompareBatchResult } from '@/types';
 import { GITHUB_PER_PAGE, MAX_BRANCH_PAGES, MAX_PR_PAGES } from '@/constants';
 
 export const fetcher = async <T>(url: string, signal?: AbortSignal): Promise<T> => {
@@ -16,13 +16,13 @@ export const githubService = {
     fetcher<GitHubRepoResponse>(`/api/github/repos/${owner}/${repo}`, signal),
 
   getBranches: async (owner: string, repo: string, signal?: AbortSignal) => {
-    let all: AnyRecord[] = [];
+    let all: { name: string; commit: { sha: string } }[] = [];
     let page = 1;
     
     try {
       while (page <= MAX_BRANCH_PAGES) {
         const url = `/api/github/repos/${owner}/${repo}/branches?per_page=${GITHUB_PER_PAGE}&page=${page}`;
-        const pageData = await fetcher<AnyRecord[]>(url, signal);
+        const pageData = await fetcher<{ name: string; commit: { sha: string } }[]>(url, signal);
         
         if (!pageData || pageData.length === 0) break;
         
@@ -30,7 +30,7 @@ export const githubService = {
         if (pageData.length < GITHUB_PER_PAGE) break;
         page++;
       }
-    } catch (e) {
+    } catch (e: unknown) {
       if (e instanceof Error && e.name === 'AbortError') throw e;
       console.warn(`[GitHub Service] Partial branches fetch: ${all.length} items. Error:`, e);
       if (all.length === 0) throw e;
@@ -39,13 +39,13 @@ export const githubService = {
   },
 
   getPullRequests: async (owner: string, repo: string, signal?: AbortSignal) => {
-    let all: AnyRecord[] = [];
+    let all: unknown[] = [];
     let page = 1;
     
     try {
       while (page <= MAX_PR_PAGES) {
         const url = `/api/github/repos/${owner}/${repo}/pulls?state=open&per_page=${GITHUB_PER_PAGE}&page=${page}`;
-        const pageData = await fetcher<AnyRecord[]>(url, signal);
+        const pageData = await fetcher<unknown[]>(url, signal);
         
         if (!pageData || pageData.length === 0) break;
         
@@ -53,7 +53,7 @@ export const githubService = {
         if (pageData.length < GITHUB_PER_PAGE) break;
         page++;
       }
-    } catch (e) {
+    } catch (e: unknown) {
       if (e instanceof Error && e.name === 'AbortError') throw e;
       console.warn(`[GitHub Service] Partial PRs fetch: ${all.length} items. Error:`, e);
       if (all.length === 0) throw e;
@@ -62,7 +62,7 @@ export const githubService = {
   },
 
   getPullRequestReviews: (owner: string, repo: string, pullNumber: number, signal?: AbortSignal) =>
-    fetcher<AnyRecord[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, signal),
+    fetcher<unknown[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, signal),
 
   getPullRequestFiles: (owner: string, repo: string, pullNumber: number, signal?: AbortSignal) =>
     fetcher<GitHubFileResponse[]>(`/api/github/repos/${owner}/${repo}/pulls/${pullNumber}/files?per_page=${GITHUB_PER_PAGE}`, signal),
@@ -79,10 +79,10 @@ export const githubService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ owner, repo, base, heads }),
       signal
-    }).then(res => res.json() as Promise<{ results: AnyRecord[] }>);
+    }).then(res => res.json() as Promise<{ results: CompareBatchResult[] }>);
   },
 
-  graphql: (query: string, variables: Record<string, any> = {}, signal?: AbortSignal) => {
+  graphql: (query: string, variables: Record<string, unknown> = {}, signal?: AbortSignal) => {
     return fetch('/api/github/graphql', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

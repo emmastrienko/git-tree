@@ -35,7 +35,7 @@ export default function SyncDocs() {
 
               <h2>Batched GraphQL Intake</h2>
               <p>
-                Standard REST calls are "chatty" and often return redundant data. We use <strong>GraphQL</strong> to request exactly what we need—branch references, SHAs, and author metadata—in a single, compressed request.
+                Standard REST calls are &quot;chatty&quot; and often return redundant data. We use <strong>GraphQL</strong> to request exactly what we need—branch references, SHAs, and author metadata—in a single, compressed request.
               </p>
 
               <h2>Incremental Stream Synchronization</h2>
@@ -45,7 +45,7 @@ export default function SyncDocs() {
               <ul>
                 <li><strong>First Pass:</strong> Fetch the default branch and immediate children.</li>
                 <li><strong>Secondary Pass:</strong> Background-fetch comparison metrics (Ahead/Behind) for the remaining branches.</li>
-                <li><strong>UI Updates:</strong> The 3D tree "grows" in real-time as new data is synced from the GitHub API.</li>
+                <li><strong>UI Updates:</strong> The 3D tree &quot;grows&quot; in real-time as new data is synced from the GitHub API.</li>
               </ul>
 
               <h2>Batching Strategy (CHUNK_SIZE)</h2>

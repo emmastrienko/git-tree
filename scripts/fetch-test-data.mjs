@@ -46,7 +46,7 @@ const api = axios.create({
           isMerged: ['identical', 'behind'].includes(c.status),
           isBase: false
         };
-      } catch (e) { return null; }
+      } catch { return null; }
     }))).filter(Boolean);
 
     const name = REPO.replace(/\//g, '-');

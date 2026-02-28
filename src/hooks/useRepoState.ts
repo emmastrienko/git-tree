@@ -26,14 +26,24 @@ export const useRepoState = ({
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  // Initialize state only from searchParams to ensure server/client match
+  // Initialize state from searchParams OR storage to ensure server/client match and avoid set-state-in-effect
   const [repoUrl, setRepoUrl] = useState(() => {
-    return searchParams.get('repo') || 'facebook/react';
+    const urlRepo = searchParams.get('repo');
+    if (urlRepo) return urlRepo;
+    if (typeof window !== 'undefined') {
+      return storage.getRepoUrl() || 'facebook/react';
+    }
+    return 'facebook/react';
   });
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const urlMode = searchParams.get('mode');
-    return isValidMode(urlMode) ? urlMode : 'branches';
+    if (isValidMode(urlMode)) return urlMode;
+    if (typeof window !== 'undefined') {
+      const lastMode = storage.getViewMode();
+      if (isValidMode(lastMode)) return lastMode;
+    }
+    return 'branches';
   });
 
   const isInitialized = useRef(false);
@@ -41,28 +51,9 @@ export const useRepoState = ({
   // Initial fetch/sync
   useEffect(() => {
     if (isInitialized.current) return;
-
-    const urlRepo = searchParams.get('repo');
-    const urlMode = searchParams.get('mode');
-    const lastRepo = storage.getRepoUrl();
-    const lastMode = storage.getViewMode();
-
-    let finalRepo = repoUrl;
-    let finalMode = viewMode;
-
-    if (!urlRepo && lastRepo) {
-      finalRepo = lastRepo;
-      setRepoUrl(lastRepo);
-    }
-    
-    if (!urlMode && lastMode && isValidMode(lastMode)) {
-      finalMode = lastMode;
-      setViewMode(lastMode);
-    }
-
-    fetchTree(finalRepo, finalMode);
+    fetchTree(repoUrl, viewMode);
     isInitialized.current = true;
-  }, [fetchTree, searchParams, repoUrl, viewMode]);
+  }, [fetchTree, repoUrl, viewMode]);
 
   // Separate effect for syncing mode - only triggers when viewMode changes
   useEffect(() => {

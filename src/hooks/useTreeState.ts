@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ViewMode, VisualizerNode } from '@/types';
+import { ViewMode, VisualizerNode, GitBranch, GitPullRequest } from '@/types';
 
 export const useTreeState = () => {
-  const [branchData, setBranchData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
-  const [prData, setPrData] = useState<{tree: VisualizerNode | null, items: any[]}>({tree: null, items: []});
+  const [branchData, setBranchData] = useState<{tree: VisualizerNode | null, items: GitBranch[]}>({tree: null, items: []});
+  const [prData, setPrData] = useState<{tree: VisualizerNode | null, items: GitPullRequest[]}>({tree: null, items: []});
   
-  const branchItemsRef = useRef<any[]>([]);
-  const prItemsRef = useRef<any[]>([]);
+  const branchItemsRef = useRef<GitBranch[]>([]);
+  const prItemsRef = useRef<GitPullRequest[]>([]);
   const fetchingNodes = useRef<Set<string>>(new Set());
   
   const [activeMode, setActiveMode] = useState<ViewMode>('branches');

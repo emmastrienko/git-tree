@@ -1,9 +1,10 @@
 import { useCallback } from 'react';
+import { GitBranch, GitPullRequest, VisualizerNode } from '@/types';
 import { storage } from '@/utils/storage';
 
 interface CachedData {
-  items: any[];
-  tree: any;
+  items: unknown[];
+  tree: VisualizerNode;
   lastAccessed: number;
 }
 
@@ -31,39 +32,42 @@ export const useCache = () => {
       toRemove.forEach(entry => storage.removeRawKey(entry.key));
       
       console.log(`[Cache] LRU Pruning: Removed ${toRemove.length} oldest items.`);
-    } catch (e) {
+    } catch {
       storage.clearAll();
     }
   }, []);
 
-  const setCache = useCallback((key: string, value: any) => {
+  const setCache = useCallback((key: string, value: { items: (GitBranch | GitPullRequest)[], tree: VisualizerNode }) => {
     if (typeof window === 'undefined') return;
     
     const minimizedValue: CachedData = {
       ...value,
       lastAccessed: Date.now(),
-      items: value.items.map((item: any) => ({
-        id: item.id,
-        number: item.number,
-        title: item.title,
-        name: item.name,
-        state: item.state,
-        draft: item.draft,
-        html_url: item.html_url,
-        ahead: item.ahead,
-        behind: item.behind,
-        history: item.history,
-        review_status: item.review_status,
-        lastUpdated: item.lastUpdated,
-        author: item.author,
-        user: item.user ? { login: item.user.login, avatar_url: item.user.avatar_url } : undefined,
-        head: item.head ? { ref: item.head.ref, sha: item.head.sha } : undefined
-      }))
+      items: value.items.map((item: GitBranch | GitPullRequest) => {
+        const b = item as any;
+        return {
+          id: b.id,
+          number: b.number,
+          title: b.title,
+          name: b.name,
+          state: b.state,
+          draft: b.draft,
+          html_url: b.html_url,
+          ahead: b.ahead,
+          behind: b.behind,
+          history: b.history,
+          review_status: b.review_status,
+          lastUpdated: b.lastUpdated,
+          author: b.author,
+          user: b.user ? { login: b.user.login, avatar_url: b.user.avatar_url } : undefined,
+          head: b.head ? { ref: b.head.ref, sha: b.head.sha } : undefined
+        };
+      })
     };
 
     try {
       storage.setCacheItem(key, JSON.stringify(minimizedValue));
-    } catch (e) {
+    } catch (e: unknown) {
       if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
         pruneCache();
         try {
@@ -87,7 +91,7 @@ export const useCache = () => {
       data.lastAccessed = Date.now();
       try {
         storage.setCacheItem(key, JSON.stringify(data));
-      } catch (e) {
+      } catch {
         // If we can't update the timestamp due to quota, just return the data
       }
       
