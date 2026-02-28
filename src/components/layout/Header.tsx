@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Menu, Search, Share2, Check, Info, LayoutDashboard } from 'lucide-react';
+import { Menu, Search, Share2, Check, Info, LayoutDashboard, BookOpen } from 'lucide-react';
 import { ViewMode } from '@/types';
 
 interface Props {
@@ -59,6 +59,9 @@ export const Header: React.FC<Props> = ({
           <nav className="flex items-center gap-4 md:gap-6">
             <Link href="/about" className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-2">
               <Info size={14} /> <span className="hidden md:inline">About</span>
+            </Link>
+            <Link href="/docs" className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-2">
+              <BookOpen size={14} /> <span className="hidden md:inline">Docs</span>
             </Link>
             <Link href="/dashboard" className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-2">
               <LayoutDashboard size={14} /> <span className="hidden md:inline">App</span>

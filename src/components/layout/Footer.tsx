@@ -11,6 +11,7 @@ export const Footer = () => {
         <nav className="flex items-center gap-6 text-[9px] font-bold tracking-widest uppercase">
           <Link href="/" className="hover:text-white transition-colors">Home</Link>
           <Link href="/about" className="hover:text-white transition-colors">About</Link>
+          <Link href="/docs" className="hover:text-white transition-colors">Docs</Link>
           <Link href="/dashboard" className="hover:text-white transition-colors">App</Link>
           <a 
             href="https://github.com/emmastrienko/git-tree" 
