@@ -77,11 +77,14 @@ export const useRepoState = ({
     const urlRepo = searchParams.get('repo');
     
     if (urlMode !== viewMode || urlRepo !== repoUrl) {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set('repo', repoUrl);
-      params.set('mode', viewMode);
-      
-      router.replace(`${pathname}?${params.toString()}`);
+      // Only sync to URL if we are on the dashboard page
+      if (pathname === '/dashboard') {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('repo', repoUrl);
+        params.set('mode', viewMode);
+        
+        router.replace(`${pathname}?${params.toString()}`);
+      }
       
       storage.setRepoUrl(repoUrl);
       storage.setViewMode(viewMode);
@@ -97,10 +100,12 @@ export const useRepoState = ({
     resetSelection();
     clearCache(repoUrl, viewMode);
     
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('repo', repoUrl);
-    params.set('mode', viewMode);
-    router.replace(`${pathname}?${params.toString()}`);
+    if (pathname === '/dashboard') {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('repo', repoUrl);
+      params.set('mode', viewMode);
+      router.replace(`${pathname}?${params.toString()}`);
+    }
     
     storage.setRepoUrl(repoUrl);
     storage.setViewMode(viewMode);
