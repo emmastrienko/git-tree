@@ -10,12 +10,31 @@ import { MOCK_TREE_DATA } from '@/utils/mock-data';
 import { ArrowRight, MoveRight } from 'lucide-react';
 
 export default function LandingPage() {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Git Tree Visualizer",
+    "description": "Visualize GitHub repository branch divergence and merge patterns in immersive 3D.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web-based",
+    "author": {
+      "@type": "Person",
+      "name": "Emma Strienko"
+    },
+    "screenshot": "https://git-tree-visualizer.vercel.app/opengraph-image",
+    "softwareVersion": "0.1.0"
+  };
+
   return (
     <MainLayout
       header={() => <Header minimal />}
       footer={<Footer />}
       scrollable
     >
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className="bg-[#020617] text-white selection:bg-indigo-500/30">
         
         {/* Hero Section */}

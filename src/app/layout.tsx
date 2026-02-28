@@ -13,10 +13,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Git Tree Visualizer",
-  description: "Visualize Git repository trees",
+  title: {
+    default: "Git Tree Visualizer | 3D GitHub Repository Topology",
+    template: "%s | Git Tree Visualizer",
+  },
+  description: "Visualize GitHub repository branch divergence and merge patterns in immersive 3D and 2D. A specialized engine for structural mapping of project histories.",
+  keywords: ["Git", "GitHub", "Visualizer", "3D", "Repository", "Branching", "Merge Patterns", "Codebase Analysis", "Three.js", "Next.js"],
+  authors: [{ name: "Emma Strienko" }],
+  openGraph: {
+    title: "Git Tree Visualizer | 3D GitHub Repository Topology",
+    description: "Reconstruct branch divergence and merge patterns through immersive 3D topology.",
+    url: "https://git-tree-visualizer.vercel.app", // Replace with your actual domain
+    siteName: "Git Tree Visualizer",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Git Tree Visualizer | 3D GitHub Repository Topology",
+    description: "Visualize GitHub repository branch divergence and merge patterns in immersive 3D.",
+  },
   icons: {
     icon: "/logo.svg",
+    apple: "/logo.svg",
   },
 };
 
